@@ -1,0 +1,13 @@
+{
+  "files.associations": {
+    "*.ino": "cpp"
+  },
+  "C_Cpp.default.cppStandard": "gnu++17",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/firmware/MagicWand",
+    "${workspaceFolder}/test/stubs_mg24"
+  ],
+  "C_Cpp.default.forcedInclude": [
+    "${workspaceFolder}/test/stubs_mg24/Arduino.h"
+  ]
+}

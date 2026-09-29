@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Test (host)", "type": "shell", "command": "make test", "group": { "kind": "test", "isDefault": true }, "problemMatcher": ["$gcc"] },
+    { "label": "Check firmware (host stubs)", "type": "shell", "command": "make check-fw", "problemMatcher": ["$gcc"] },
+    { "label": "Compile firmware", "type": "shell", "command": "make compile", "group": { "kind": "build", "isDefault": true }, "problemMatcher": ["$gcc"] },
+    { "label": "Upload firmware", "type": "shell", "command": "make upload", "problemMatcher": ["$gcc"] },
+    { "label": "Serial monitor", "type": "shell", "command": "make monitor", "isBackground": true, "problemMatcher": [] },
+    { "label": "Serve web app", "type": "shell", "command": "make app", "isBackground": true, "problemMatcher": [] }
+  ]
+}

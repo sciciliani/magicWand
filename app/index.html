@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wand Workshop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=7" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo" aria-hidden="true">✦</span>
+      <div>
+        <h1>Wand Workshop</h1>
+        <p id="status" class="muted">No wand connected</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <label class="toggle" title="Don't let the wand fall asleep while this app is connected">
+        <input type="checkbox" id="awakeToggle" disabled /> <span>Keep awake</span>
+      </label>
+      <label class="toggle" title="Recognize moves but don't send IR">
+        <input type="checkbox" id="testMode" disabled /> <span>Test mode</span>
+      </label>
+      <button id="connectBtn">Release wand</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="live" aria-selected="true">Live</button>
+    <button role="tab" data-tab="spells">Spells</button>
+    <button role="tab" data-tab="codes">IR codes</button>
+    <button role="tab" data-tab="settings">Settings</button>
+    <button role="tab" data-tab="log">Log</button>
+  </nav>
+
+  <main>
+    <!-- LIVE -------------------------------------------------------------->
+    <section id="tab-live" class="tab">
+      <div class="card">
+        <div class="card-head">
+          <h2>Motion</h2>
+          <div class="legend">
+            <span class="k1">tip right</span><span class="k2">tip up</span>
+            <span class="k3">twist</span><span class="k4">thrust</span>
+          </div>
+        </div>
+        <canvas id="plot" height="220"></canvas>
+        <p class="muted small">These four signals are the same whichever way you grip the wand.</p>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h2>Last spell</h2>
+          <div id="lastCast" class="last-cast muted">Wave the wand…</div>
+        </div>
+        <div class="card">
+          <h2>Recent moves</h2>
+          <ol id="history" class="history"></ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- SPELLS ------------------------------------------------------------>
+    <section id="tab-spells" class="tab" hidden>
+      <div class="card intro">
+        <h2>Teach the wand a move</h2>
+        <ol class="steps">
+          <li>Pick a slot and give it a name (or tap a suggested spell).</li>
+          <li>Press <b>Record</b>. The wand ticks twice and buzzes "go": do the move once.</li>
+          <li>Repeat 3 times. Change your grip between takes, it makes the wand more forgiving.</li>
+          <li>Choose which IR code the move sends.</li>
+        </ol>
+      </div>
+      <div id="spellGrid" class="spell-grid"></div>
+      <details class="card">
+        <summary><h2>Suggested moves</h2></summary>
+        <p class="muted">Designed to work in any grip. Directions are from your point of view: "up" means up
+          toward the ceiling, "right" means to your right while pointing at the TV.</p>
+        <div id="suggestions" class="suggestions"></div>
+      </details>
+    </section>
+
+    <!-- CODES ------------------------------------------------------------->
+    <section id="tab-codes" class="tab" hidden>
+      <div class="card intro">
+        <h2>IR codes</h2>
+        <p class="muted">Two ways to fill a slot: <b>Learn</b> copies a button from your own remote (hold it near the
+          wand's tip; works for air conditioners too), or <b>Library</b> picks a known code by device and brand.</p>
+      </div>
+      <div id="codeList" class="code-list"></div>
+    </section>
+
+    <!-- SETTINGS ---------------------------------------------------------->
+    <section id="tab-settings" class="tab" hidden>
+      <div class="card form">
+        <h2>Your wand</h2>
+        <label>Name
+          <div class="row"><span class="muted">Wand-</span><input id="wandName" maxlength="11" placeholder="XXXX" />
+            <button id="renameBtn">Rename</button></div>
+          <span class="hint">Letters, numbers and dashes, up to 11. Empty = the factory name. The Bluetooth list shows it as Wand-&lt;name&gt;.</span>
+        </label>
+      </div>
+      <div class="card form">
+        <h2>Recognition</h2>
+        <label>Strictness <output id="thrOut"></output>
+          <input type="range" id="thr" min="0.25" max="0.9" step="0.05" />
+          <span class="hint">Left = strict (fewer accidental casts). Right = forgiving.</span>
+        </label>
+        <div class="row">
+          <button id="calBtn">Calibrate wand direction</button>
+          <span class="hint">Only needed if the board is mounted differently. Hold the tip straight up for 1 s.</span>
+        </div>
+      </div>
+      <div class="card form">
+        <h2>Power</h2>
+        <label>Sleep after <output id="sleepOut"></output>
+          <input type="range" id="sleep" min="10" max="300" step="5" />
+          <span class="hint">No motion for this long puts the wand in deep sleep. Picking it up wakes it. While this app is connected it stays awake for 2 minutes instead, so you can work on it.</span>
+        </label>
+        <label>Wake sensitivity <output id="wakeOut"></output>
+          <input type="range" id="wake" min="1" max="12" step="1" />
+          <span class="hint">How much the wand must be tilted to wake up: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Higher ignores table bumps.</span>
+        </label>
+        <label class="toggle"><input type="checkbox" id="haptics" /> <span>Vibration feedback</span></label>
+        <div class="row">
+          <button id="buzzBtn">Test vibration</button>
+          <button id="sleepBtn">Sleep now</button>
+        </div>
+      </div>
+      <div class="card form danger">
+        <h2>Danger zone</h2>
+        <div class="row">
+          <button id="exportBtn">Back up IR codes</button>
+          <button id="resetBtn" class="danger">Factory reset</button>
+        </div>
+      </div>
+      <div class="card"><h2>Device</h2><pre id="deviceInfo" class="muted small">—</pre></div>
+    </section>
+
+    <!-- LOG --------------------------------------------------------------->
+    <section id="tab-log" class="tab" hidden>
+      <div class="card">
+        <form id="cmdForm" class="row">
+          <input id="cmdInput" placeholder="Raw command, e.g. HELLO or SEND 0" autocomplete="off" />
+          <button>Send</button>
+        </form>
+        <pre id="log" class="log"></pre>
+      </div>
+    </section>
+  </main>
+
+
+  <!-- Shown whenever no wand is connected -->
+  <dialog id="connectDlg" class="summon">
+    <div class="sigil" aria-hidden="true">✦</div>
+    <h2>Summon your wand</h2>
+    <p class="muted">Pick the wand up to wake it: its light blinks slowly while it waits.</p>
+    <div id="knownWands" class="known"></div>
+    <button id="findBtn" class="primary big">Search for wands…</button>
+    <p id="noBle" class="warn" hidden>This browser can't use Bluetooth. Use Chrome or Edge on a Mac, Windows or
+      Android (iPhone browsers don't support Web Bluetooth).</p>
+    <p id="connectMsg" class="small"></p>
+    <p id="demoLink" class="small muted"><a href="?demo">Explore with a pretend wand</a></p>
+  </dialog>
+
+  <!-- Remote library: device / brand / button -> test -> save + bind -->
+  <dialog id="libDlg">
+    <form method="dialog">
+      <h2 id="libTitle">Remote library</h2>
+      <label>Device <select id="libDevice"></select></label>
+      <label>Brand <select id="libBrand"></select></label>
+      <p id="libNote" class="hint"></p>
+      <label>Button <select id="libAction"></select></label>
+      <div class="row">
+        <button type="button" id="libTest">Test</button>
+        <button type="button" id="libLearn" hidden>Learn from remote</button>
+      </div>
+      <p id="libState" class="hint"></p>
+      <label>Cast with <select id="libSpell"></select></label>
+      <menu>
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button id="libSave" class="primary">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Wand says it will fall asleep soon -->
+  <div id="sleepWarn" class="sleep-warn" role="alert" hidden>
+    <span class="moon" aria-hidden="true">☾</span>
+    <div class="txt"><b>The wand falls asleep in <span id="sleepSecs">10</span> s</b>
+      <span class="small muted">Pick it up to keep it awake, or:</span></div>
+    <div class="row">
+      <button id="stayAwakeBtn" class="primary small">Keep awake while I configure</button>
+      <button id="snoozeBtn" class="small">Not yet</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="app.js?v=7"></script>
+</body>
+</html>

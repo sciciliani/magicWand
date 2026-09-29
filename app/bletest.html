@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wand Bluetooth test</title>
+<style>
+  body { font: 14px/1.4 ui-monospace, Menlo, monospace; background: #111; color: #eee; margin: 16px; }
+  button { font: inherit; padding: 8px 14px; margin: 0 6px 8px 0; }
+  #log { white-space: pre-wrap; background: #000; padding: 10px; border-radius: 6px; min-height: 300px; }
+  .ok { color: #7c7; } .err { color: #f77; } .rx { color: #9cf; } .tx { color: #fc6; }
+</style>
+</head>
+<body>
+<h3>Wand Bluetooth test</h3>
+<p>Every step is logged below. Copy the whole log and send it.</p>
+<button id="go">1. Pick wand &amp; connect</button>
+<button id="ping">2. Send PING</button>
+<button id="hello">3. Send HELLO</button>
+<button id="bye">Disconnect</button>
+<div id="log"></div>
+<script>
+const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e', TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const logEl = document.getElementById('log');
+const t0 = performance.now();
+function log(msg, cls = '') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = `${((performance.now() - t0) / 1000).toFixed(2).padStart(7)}s  ${msg}`;
+  logEl.append(line);
+  console.log('[bletest]', msg);
+}
+let device, rx;
+document.getElementById('go').onclick = async () => {
+  try {
+    if (!navigator.bluetooth) return log('navigator.bluetooth missing: use Chrome', 'err');
+    log('requestDevice…');
+    device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'Wand' }], optionalServices: [NUS] });
+    log(`picked "${device.name}" id=${device.id}`, 'ok');
+    device.addEventListener('gattserverdisconnected', () => log('DISCONNECTED (gattserverdisconnected)', 'err'));
+    log('gatt.connect…');
+    const server = await device.gatt.connect();
+    log(`connected=${server.connected}`, 'ok');
+    log('getPrimaryServices (all)…');
+    try {
+      const all = await server.getPrimaryServices();
+      for (const s of all) log(`  service ${s.uuid}`);
+    } catch (e) { log(`  listing failed: ${e.name}: ${e.message}`, 'err'); }
+    log('getPrimaryService(NUS)…');
+    const svc = await server.getPrimaryService(NUS);
+    const chars = await svc.getCharacteristics();
+    for (const c of chars) log(`  char ${c.uuid} props=${Object.entries(c.properties).filter(([, v]) => v).map(([k]) => k).join(',')}`);
+    rx = await svc.getCharacteristic(RX);
+    const tx = await svc.getCharacteristic(TX);
+    tx.addEventListener('characteristicvaluechanged', (e) => {
+      const txt = new TextDecoder().decode(e.target.value);
+      log(`RX ${JSON.stringify(txt)}`, 'rx');
+    });
+    log('startNotifications…');
+    await tx.startNotifications();
+    log('notifications ON. Now press "Send PING".', 'ok');
+  } catch (e) {
+    log(`FAILED: ${e.name}: ${e.message}`, 'err');
+  }
+};
+async function send(text) {
+  if (!rx) return log('connect first', 'err');
+  try {
+    log(`TX ${JSON.stringify(text + '\n')}`, 'tx');
+    await rx.writeValueWithResponse(new TextEncoder().encode(text + '\n'));
+    log('write ok', 'ok');
+  } catch (e) {
+    log(`write with response failed: ${e.name}: ${e.message}. Trying without response…`, 'err');
+    try { await rx.writeValueWithoutResponse(new TextEncoder().encode(text + '\n')); log('write (no response) ok', 'ok'); }
+    catch (e2) { log(`FAILED: ${e2.name}: ${e2.message}`, 'err'); }
+  }
+}
+document.getElementById('ping').onclick = () => send('PING');
+document.getElementById('hello').onclick = () => send('HELLO');
+document.getElementById('bye').onclick = () => { device?.gatt?.disconnect(); log('disconnect requested'); };
+</script>
+</body>
+</html>
