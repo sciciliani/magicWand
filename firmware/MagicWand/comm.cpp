@@ -55,8 +55,10 @@ static volatile bool evConnect = false, evDisconnect = false;
 static void onConnect(BLEDevice) { linkUp = true; evConnect = true; }
 
 static void onDisconnect(BLEDevice) {
-  dbg("BLE: app disconnected, restarting Bluetooth");
-  dbg("BLE: main loop is at: ", (const char*)loopAt);
+  // NOTHING slow in here (no Serial prints): this handler runs inside the
+  // Bluetooth stack. Printing from it froze the wand (the first line got out,
+  // the second one never did, then the watchdog fired). Just raise flags;
+  // poll() does the logging and the restart.
   linkUp = false;
   evDisconnect = true;
   bleLen = 0;
@@ -131,6 +133,7 @@ void poll() {
     // wand on this board. Restart the whole chip instead (~2 s, no buzz): the
     // next connection gets exactly the fresh state the first one after
     // power-up had, with nothing left over from the old link.
+    dbg("BLE: app disconnected");
     dbg("BLE: restarting the wand for a fresh Bluetooth stack");
     power::quietRestart();
   }
