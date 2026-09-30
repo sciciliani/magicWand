@@ -593,8 +593,10 @@ void loop() {
                                                           : status::kAdvertising);
     status::update();
   }
+  comm::loopAt = "loop: before comm::poll";
   comm::poll();
 
+  comm::loopAt = "loop: readLine/handle";
   if (char* line = comm::readLine()) handle(line);
 
   uint32_t now = millis();
@@ -612,6 +614,7 @@ void loop() {
     status::flash(status::kError);
     mode = kNormal;
   }
+  comm::loopAt = "loop: learn";
   if (mode == kLearning) {
     ir::LearnState s = ir::pollLearn(learnBuf);
     if (s == ir::kDone) {
@@ -630,6 +633,7 @@ void loop() {
     }
   }
 
+  comm::loopAt = "loop: sampling";
   // 100 Hz sampling
   if ((int32_t)(micros() - nextSampleUs) >= 0) {
     nextSampleUs += 1000000 / SAMPLE_HZ;
@@ -643,6 +647,7 @@ void loop() {
     comm::outf("BAT %u %s %d", power::batteryPercent(), FX(power::batteryVolts()).s, power::onCharger());
   }
 
+  comm::loopAt = "loop: button";
   pollButton();
 
   // Pending restart (rename): once the app has let go, or after 5 s anyway.
@@ -665,6 +670,7 @@ void loop() {
   int32_t idleFor = (int32_t)(millis() - lastMotionMs);
   if (!connected && mode == kNormal && !haptics::busy() && idleFor > (int32_t)settings.idleSleepMs) goSleep("idle");
 
+  comm::loopAt = "loop: end (idle delay)";
   // Let FreeRTOS idle the CPU until the next sample is due.
   int32_t waitUs = (int32_t)(nextSampleUs - micros());
   if (waitUs > 1500 && !haptics::busy()) delay(waitUs / 1000);

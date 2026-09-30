@@ -10,6 +10,8 @@
 
 namespace comm {
 
+volatile const char* loopAt = "?";
+
 // Nordic UART Service — same UUIDs the web app looks for.
 static BLEService nus("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
 static BLECharacteristic rxChar("6E400002-B5A3-F393-E0A9-E50E24DCCA9E", BLEWrite | BLEWriteWithoutResponse, 244);
@@ -54,6 +56,7 @@ static void onConnect(BLEDevice) { linkUp = true; evConnect = true; }
 
 static void onDisconnect(BLEDevice) {
   dbg("BLE: app disconnected, restarting Bluetooth");
+  dbg("BLE: main loop is at: ", (const char*)loopAt);
   linkUp = false;
   evDisconnect = true;
   bleLen = 0;
@@ -108,6 +111,7 @@ static void resetLinkState() {
 }
 
 void poll() {
+  loopAt = "comm::poll start";
   static bool wasSub = false;
   static uint32_t retryAt = 0;
   if (!bleOk) {  // a restart failed: try again every second
@@ -118,7 +122,9 @@ void poll() {
     dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED, retrying");
     return;
   }
+  loopAt = "inside BLE.poll()";
   BLE.poll();
+  loopAt = "comm::poll after BLE.poll";
   if (evConnect) { evConnect = false; dbg("BLE: app connected"); }
   if (evDisconnect) {
     // Restarting just the Bluetooth stack (BLE.end() + BLE.begin()) hung the
@@ -185,6 +191,7 @@ char* readLine() {
 // buffers: writing into a link that just died is where the wand froze (the
 // motion stream was mid-send when the app disconnected).
 static void notify(const char* p, size_t n) {
+  loopAt = "notify(): sending to the app";
   while (n > 0) {
     if (!linkUp) return;
     size_t k = n < BLE_NOTIFY_CHUNK ? n : BLE_NOTIFY_CHUNK;
