@@ -1,7 +1,7 @@
 // app.js — Wand Workshop: configure the wand over Web Bluetooth.
 // Protocol reference: docs/PROTOCOL.md
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=9';
-import { LIBRARY } from './ir-presets.js?v=9';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=10';
+import { LIBRARY } from './ir-presets.js?v=10';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -92,7 +92,7 @@ async function connectTo(device) {
   document.body.classList.remove('offline');
   $('#connectBtn').textContent = 'Release wand';
   send('HELLO');
-  send('STREAM 1');
+  updateStream();
 }
 
 $('#findBtn').addEventListener('click', () => connectTo(null));
@@ -110,7 +110,7 @@ function stopStream() {
 document.addEventListener('visibilitychange', () => {
   if (!state.link) return;
   if (document.visibilityState === 'hidden') stopStream();
-  else send('STREAM 1');
+  else updateStream();
 });
 window.addEventListener('pagehide', stopStream);
 window.addEventListener('beforeunload', stopStream);
@@ -535,8 +535,16 @@ $('#cmdForm').addEventListener('submit', (e) => {
 });
 
 // ------------------------------------------------------------------ tabs, toast
+// The motion stream runs only while the Live tab is shown in a visible page.
+const liveTabShown = () => document.querySelector('.tabs button[aria-selected="true"]')?.dataset.tab === 'live';
+function updateStream() {
+  if (!state.link) return;
+  send(`STREAM ${liveTabShown() && document.visibilityState === 'visible' ? 1 : 0}`);
+}
+
 document.querySelectorAll('.tabs button').forEach((b) =>
   b.addEventListener('click', () => {
+    setTimeout(updateStream, 0);  // after the tab switch below
     document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x === b));
     document.querySelectorAll('.tab').forEach((t) => (t.hidden = t.id !== 'tab-' + b.dataset.tab));
   }));
