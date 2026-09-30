@@ -62,7 +62,7 @@ Key decisions (agreed with Santiago, don't undo without asking):
 6. `PIN_VBAT_EN PD3` is a guess. The battery formula is from the Seeed wiki; check it with a meter.
 7. Serial left open blocks EM4 wake-up (Seeed forum): comm::end() calls Serial.end() before sleep.
 8. BLE writes from Chrome: app tries 180-byte chunks, falls back to 20 on error. Check that CODE uploads work.
-9. Gesture thresholds with real data: `tools/wand_log.py --csv` + app Test mode.
+9. Gesture thresholds with real data: `tools/wand_log.py --csv` + the app's Live tab.
 
 ## Next steps / ideas (not started)
 

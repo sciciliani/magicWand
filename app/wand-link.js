@@ -109,7 +109,7 @@ export class MockWand {
     this._close = () => {};
     this.g = Array.from({ length: 8 }, () => ({ n: '', c: 0, t: 0.45, b: -1 }));
     this.c = Array.from({ length: 12 }, () => ({ n: '', k: 0, l: 0, d: [] }));
-    this.s = { thr: 0.45, sleep: 30, wake: 3, haptics: 1, test: 0, axis: [1, 0, 0], name: 'Wand-DEMO' };
+    this.s = { thr: 0.45, sleep: 30, wake: 3, haptics: 1, axis: [1, 0, 0], name: 'Wand-DEMO' };
     this.stream = false;
     this.t = 0;
   }
@@ -135,7 +135,7 @@ export class MockWand {
         const [g, i] = trained[Math.floor(Math.random() * trained.length)];
         this._emit(`SEG 48`);
         this._emit(`MATCH ${i} 0.21 0.74 1`);
-        this._emit(`CAST ${i} ${g.b} ${g.b >= 0 && !this.s.test ? 1 : 0}`);
+        this._emit(`CAST ${i} ${g.b} ${g.b >= 0 ? 1 : 0}`);
       }
     }
   }
@@ -143,7 +143,7 @@ export class MockWand {
   _info() {
     return 'INFO ' + JSON.stringify({
       name: this.s.name, fw: '0.1.0-demo', bat: 76, volts: 3.92, chg: 0, axis: this.s.axis, thr: this.s.thr,
-      sleep: this.s.sleep, wake: this.s.wake, haptics: this.s.haptics, motor: 1, irrx: 1, test: this.s.test, awake: this.s.awake || 0,
+      sleep: this.s.sleep, wake: this.s.wake, haptics: this.s.haptics, motor: 1, irrx: 1,
       g: this.g, c: this.c.map(({ n, k, l }) => ({ n, k, l })),
     });
   }
@@ -154,7 +154,6 @@ export class MockWand {
     switch (cmd) {
       case 'HELLO': case 'INFO': this._emit(this._info()); break;
       case 'STREAM': this.stream = a1 === '1'; this._emit(`OK STREAM ${a1}`); break;
-      case 'TEST': this.s.test = +a1; this._emit(`OK TEST ${a1}`); break;
       case 'REC':
         if (a2) this.g[i].n = a2;
         this._emit(`REC ${i} armed`);
@@ -197,7 +196,6 @@ export class MockWand {
       case 'SLEEP': this._emit('SLEEP requested'); setTimeout(() => this.disconnect(), 300); break;
       case 'RESET': this._emit(a1 === 'yes' ? 'OK RESET' : 'ERR type RESET yes'); break;
       case 'PING': this._emit('PONG'); break;
-      case 'AWAKE': this.s.awake = a1 === '1' ? 1 : 0; this._emit(`OK AWAKE ${this.s.awake}`); break;
       default: this._emit(`ERR unknown ${cmd}`);
     }
     return Promise.resolve();

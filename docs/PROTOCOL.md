@@ -16,7 +16,6 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `HELLO` / `INFO` | Full state | `INFO {json}` (below) |
 | `PING` | Liveness | `PONG` |
 | `STREAM 1\|0` | Live motion features at 25 Hz | `OK STREAM n`, then `F …` lines |
-| `TEST 1\|0` | Test mode: recognize moves but don't fire IR | `OK TEST n` |
 | `REC <g> [name]` | Record one training sample into gesture slot g (0–7). The wand ticks twice and buzzes "go", then waits up to 5 s for a move | `REC g armed`, then `REC g ok <count> <threshold>` or `REC g timeout` |
 | `GNAME <g> <name>` | Rename gesture | `OK GNAME g` |
 | `GCLR <g>` | Forget gesture samples | `OK GCLR g` |
@@ -38,7 +37,6 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `BUZZ <ms>` | Test the motor | `OK BUZZ` |
 | `BAT` | Battery | `BAT <pct> <volts> <charging>` |
 | `SLEEP` | Deep sleep now | `SLEEP requested` |
-| `AWAKE 1\|0` | Don't fall asleep while the app stays connected (cleared on disconnect). Any command also restarts the sleep timer | `OK AWAKE n` |
 | `RESET yes` | Factory reset (erase flash) | `OK RESET` |
 | `EXPORT` | Print all spells, IR codes and bindings as a ready-to-paste `firmware/MagicWand/default_spells.h` (loaded on first boot and factory reset) | lines between `BEGIN`/`END` markers |
 
@@ -50,9 +48,8 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `F <right> <up> <twist> <thrust> <energy>` | Features ×100 (grip-independent), only while `STREAM 1` |
 | `SEG <n>` | A motion segment of n samples was detected |
 | `MATCH <g> <dist> <second> <accepted>` | Classifier result (g = −1 if nothing trained) |
-| `CAST <g> <c> <fired>` | A spell was recognized; `fired` = 0 in test mode, while charging, or if unbound |
+| `CAST <g> <c> <fired>` | A spell was recognized; `fired` = 0 while charging or if unbound |
 | `BAT <pct> <volts> <charging>` | Every 30 s while connected |
-| `SLEEPSOON <s>` / `SLEEPSOON cancel` | Will sleep in s seconds (sent 10 s before) / was moved or talked to, timer restarted |
 | `SLEEP <why>` | About to enter deep sleep (BLE drops) |
 | `IRCODE <c> <name> <bits> bits x<repeats> <hex> (timings)` | Human-readable summary of a stored code |
 | `ERR <text>` | Something went wrong |
@@ -61,7 +58,7 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 
 ```json
 {"name":"Wand-A1B2","fw":"0.1.0","bat":76,"volts":3.92,"chg":0,"axis":[1,0,0],"thr":0.45,"sleep":30,"wake":3,
- "haptics":1,"motor":1,"irrx":1,"test":0,"store":"nvm3",
+ "haptics":1,"motor":1,"irrx":1,"store":"nvm3",
  "g":[{"n":"Aperio","c":3,"t":0.52,"b":0}, … 8 entries],
  "c":[{"n":"Samsung_Power","k":38,"l":67}, … 12 entries]}
 ```

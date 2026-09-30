@@ -133,7 +133,7 @@ Seeed's `xiao_mg24_erase.sh` (see the Seeed getting-started wiki).
 | Five very fast flashes | Error or timeout |
 | Off | Asleep |
 
-- **Sleep:** after **30 s** without motion (10 min while the app is connected) the wand goes into
+- **Sleep:** after **30 s** without motion (never while the app is connected: use **Sleep now**) the wand goes into
   deep sleep. Every 1.2 s it checks for a fraction of a second whether it has been moved;
   picking it up wakes it (one buzz). Change it with `SET sleep <seconds>` or in the app.
 - **Button (optional, D9):** tap = restart (also wakes it up). Hold **5 s** = factory reset.
@@ -172,7 +172,7 @@ Try the UI without a wand at `http://localhost:8000/?demo`.
    while pointing at the device, then **Save** to bind it. Or *Learn* by pointing the original remote
    at the receiver from about 5 cm and pressing the button.
 4. **Spells**: name a slot (or use a suggestion), press **Record** 3 times, pick the IR code.
-5. **Test mode**: cast for a while and check what it recognizes, then turn it off.
+5. **Live** tab: cast for a while and check what it recognizes in *Recent moves*.
 
 ### IR codes by hex
 

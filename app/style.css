@@ -186,11 +186,3 @@ dialog input, #wandName { padding: 6px 8px; border: 1px solid var(--line); borde
 dialog select { width: 100%; min-width: 0; }
 dialog form { min-width: 0; }
 
-/* "falls asleep soon" banner */
-.sleep-warn { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 9;
-  width: min(560px, calc(100% - 32px)); display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center;
-  background: linear-gradient(180deg, #241c35, #17131f); border: 1px solid var(--gold); border-radius: 12px;
-  padding: 12px 14px; box-shadow: 0 10px 40px #000c, 0 0 24px #e3bd6233; }
-.sleep-warn .moon { font-size: 28px; color: var(--gold); grid-row: span 2; }
-.sleep-warn .txt { display: grid; }
-.sleep-warn .row { grid-column: 2; }

@@ -1,7 +1,7 @@
 // app.js — Wand Workshop: configure the wand over Web Bluetooth.
 // Protocol reference: docs/PROTOCOL.md
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=7';
-import { LIBRARY } from './ir-presets.js?v=7';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=8';
+import { LIBRARY } from './ir-presets.js?v=8';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -91,8 +91,6 @@ async function connectTo(device) {
   connectDlg.close();
   document.body.classList.remove('offline');
   $('#connectBtn').textContent = 'Release wand';
-  $('#testMode').disabled = false;
-  $('#awakeToggle').disabled = false;
   send('HELLO');
   send('STREAM 1');
 }
@@ -106,9 +104,6 @@ function onClosed() {
   state.link = null;
   state.info = null;
   state.recording = state.learning = -1;
-  $('#testMode').disabled = true;
-  $('#awakeToggle').disabled = true;
-  hideSleepWarn();
   setStatus('No wand connected');
   render();
   if ($('#libDlg').open) $('#libDlg').close();
@@ -158,12 +153,6 @@ function onLine(line) {
     case 'CODE': onCodeDump(p); break;
     case 'OK':
       if (['GNAME', 'GCLR', 'CODE', 'CNAME', 'CCLR', 'BIND', 'SET', 'RESET'].includes(p[0])) send('HELLO');
-      if (p[0] === 'AWAKE') {
-        if (state.info) state.info.awake = +p[1];
-        $('#awakeToggle').checked = p[1] === '1';
-        hideSleepWarn();
-        if (p[1] === '1') toast('The wand stays awake while this app is connected');
-      }
       if (p[0] === 'SEND' || p[0] === 'TRY') toast('IR sent. Did the device react?');
       if (p[0] === 'RESET') toast('Wand reset to factory settings');
       if (p[0] === 'SET' && p[1] === 'name') {
@@ -172,8 +161,7 @@ function onLine(line) {
         setTimeout(() => state.link?.disconnect(), 300);  // let it restart without a live link
       }
       break;
-    case 'SLEEP': hideSleepWarn(); toast('Wand is going to sleep 💤'); break;
-    case 'SLEEPSOON': p[0] === 'cancel' ? hideSleepWarn() : showSleepWarn(+p[0] || 10); break;
+    case 'SLEEP': toast('Wand is going to sleep 💤'); break;
     case 'ERR': toast(line.slice(4), true); break;
   }
 }
@@ -203,7 +191,7 @@ function onCast(g, c, fired) {
   el.classList.remove('muted', 'flash');
   void el.offsetWidth;
   el.classList.add('flash');
-  const what = c < 0 ? 'no IR code bound yet' : fired ? `sent “${codeName(c)}”` : `would send “${codeName(c)}” (test mode or charging)`;
+  const what = c < 0 ? 'no IR code bound yet' : fired ? `sent “${codeName(c)}”` : `would send “${codeName(c)}” (not sent while charging)`;
   el.innerHTML = `✨ ${esc(gestureName(g))}<span class="sub">${esc(what)}</span>`;
 }
 
@@ -253,8 +241,6 @@ function renderStatus() {
   if (!i) return setStatus(`${state.link.name}: loading…`);
   const bat = i.chg ? `⚡ charging (${i.bat}%)` : `🔋 ${i.bat}%`;
   setStatus(`${i.name || state.link.name} · ${bat} · fw ${i.fw}`);
-  $('#testMode').checked = !!i.test;
-  $('#awakeToggle').checked = !!i.awake;
 }
 
 function codeOptions(selected) {
@@ -483,29 +469,7 @@ $('#thr').addEventListener('change', (e) => send(`SET thr ${e.target.value}`));
 $('#sleep').addEventListener('change', (e) => send(`SET sleep ${e.target.value}`));
 $('#wake').addEventListener('change', (e) => send(`SET wake ${e.target.value}`));
 $('#haptics').addEventListener('change', (e) => send(`SET haptics ${e.target.checked ? 1 : 0}`));
-$('#testMode').addEventListener('change', (e) => send(`TEST ${e.target.checked ? 1 : 0}`));
-$('#awakeToggle').addEventListener('change', (e) => send(`AWAKE ${e.target.checked ? 1 : 0}`));
 
-// ------------------------------------------------------------------ sleep warning
-let sleepTimer;
-function showSleepWarn(secs) {
-  const box = $('#sleepWarn');
-  let left = secs;
-  $('#sleepSecs').textContent = left;
-  box.hidden = false;
-  clearInterval(sleepTimer);
-  sleepTimer = setInterval(() => {
-    left = Math.max(0, left - 1);
-    $('#sleepSecs').textContent = left;
-    if (!left) clearInterval(sleepTimer);
-  }, 1000);
-}
-function hideSleepWarn() {
-  clearInterval(sleepTimer);
-  $('#sleepWarn').hidden = true;
-}
-$('#stayAwakeBtn').addEventListener('click', () => send('AWAKE 1'));
-$('#snoozeBtn').addEventListener('click', () => send('PING'));  // any message restarts the sleep timer
 $('#calBtn').addEventListener('click', () => send('CAL'));
 $('#renameBtn').addEventListener('click', () => {
   const v = $('#wandName').value.trim().replace(/[^A-Za-z0-9-]+/g, '_').slice(0, 11);

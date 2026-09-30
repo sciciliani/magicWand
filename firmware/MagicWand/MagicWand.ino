@@ -36,14 +36,11 @@ static uint32_t modeDeadline = 0;
 static uint32_t recArmAt = 0;     // recording starts after the countdown buzz
 
 static bool streaming = false;
-static bool testMode = false;
 static uint32_t lastMotionMs = 0;
 static uint32_t cooldownUntil = 0;
 static uint32_t nextSampleUs = 0;
 static uint32_t lastBatteryMs = 0;
 static uint32_t restartAt = 0;
-static float lastEnergy = 0;
-static bool stayAwake = false;  // AWAKE 1: never sleep while the app is connected  // motion energy of the latest sample (sleep debug)  // pending restart (after a rename), 0 = none
 static uint32_t sampleCount = 0;
 
 // calibration accumulator
@@ -82,12 +79,12 @@ static void sendInfo() {
   int n = snprintf(buf, sizeof(buf),
                    "INFO {\"name\":\"%s\",\"fw\":\"%s\",\"bat\":%u,\"volts\":%s,\"chg\":%d,\"axis\":[%s,%s,%s],"
                    "\"thr\":%s,\"sleep\":%lu,\"wake\":%u,\"haptics\":%u,\"motor\":%d,\"irrx\":%d,"
-                   "\"test\":%d,\"awake\":%d,\"store\":\"%s\",\"g\":[",
+                   "\"store\":\"%s\",\"g\":[",
                    wandName(), FW_VERSION, power::batteryPercent(), FX(power::batteryVolts()).s, power::onCharger(),
                    FX(settings.axis[0], 3).s, FX(settings.axis[1], 3).s, FX(settings.axis[2], 3).s,
                    FX(settings.threshold).s,
                    (unsigned long)(settings.idleSleepMs / 1000), settings.wakeThreshold, settings.hapticsOn,
-                   HAS_MOTOR, HAS_IR_RECEIVER, testMode, stayAwake, storage::backendName());
+                   HAS_MOTOR, HAS_IR_RECEIVER, storage::backendName());
   for (int g = 0; g < kMaxGestures; g++)
     n += snprintf(buf + n, sizeof(buf) - n, "%s{\"n\":\"%s\",\"c\":%u,\"t\":%s,\"b\":%d}", g ? "," : "",
                   gestures[g].name, gestures[g].count, FX(gestures[g].threshold).s,
@@ -144,9 +141,6 @@ static void handle(char* line) {
 
   if (!strcmp(cmd, "HELLO") || !strcmp(cmd, "INFO")) {
     sendInfo();
-  } else if (!strcmp(cmd, "AWAKE")) {  // AWAKE 1|0: don't sleep while the app is connected
-    stayAwake = a1 && atoi(a1) != 0;
-    comm::outf("OK AWAKE %d", stayAwake);
   } else if (!strcmp(cmd, "PING")) {
     comm::out("PONG");
   } else if (!strcmp(cmd, "EXPORT")) {  // print a ready-to-paste default_spells.h
@@ -159,9 +153,6 @@ static void handle(char* line) {
   } else if (!strcmp(cmd, "STREAM")) {
     streaming = i1 == 1;
     comm::outf("OK STREAM %d", streaming);
-  } else if (!strcmp(cmd, "TEST")) {
-    testMode = i1 == 1;
-    comm::outf("OK TEST %d", testMode);
   } else if (!strcmp(cmd, "REC")) {  // REC <g> [name]
     if (!validG(i1)) return comm::out("ERR REC slot");
     if (a2) setName(gestures[i1].name, wand::kNameLen, a2);
@@ -361,7 +352,7 @@ static void onSegment() {
   comm::outf("MATCH %d %s %s %d", m.gid, FX(m.dist, 3).s, FX(m.second >= 1e8f ? -1.0f : m.second, 3).s, m.accepted);
   if (!m.accepted) return;  // unrecognized moves stay silent
   int c = settings.bind[m.gid] == kNoBinding ? -1 : settings.bind[m.gid];
-  bool fire = c >= 0 && codes[c].khz && !testMode && (CAST_WHILE_CHARGING || !power::onCharger());
+  bool fire = c >= 0 && codes[c].khz && (CAST_WHILE_CHARGING || !power::onCharger());
   haptics::play(haptics::kCast);
   status::flash(status::kCast);
   if (fire) {
@@ -395,7 +386,6 @@ static void sampleOnce() {
 
   uint32_t now = millis();
   if (energy > STILL_ENERGY) lastMotionMs = now;
-  lastEnergy = energy;
 
   if (streaming && comm::bleNotifying() && (sampleCount % 4) == 0) {
     comm::outf("F %d %d %d %d %d", (int)(f[0] * 100), (int)(f[1] * 100), (int)(f[2] * 100), (int)(f[3] * 100),
@@ -652,40 +642,17 @@ void loop() {
     systemReset();
   }
 
-  // Idle -> deep sleep. A new app connection counts as activity.
+  // Idle -> deep sleep, but never while the app is connected: then the wand
+  // only sleeps when asked (SLEEP command / "Sleep now" in the app).
   static bool wasConnected = false;
   bool connected = comm::bleConnected();
-  if (connected && !wasConnected) lastMotionMs = now;
-  if (!connected && wasConnected) stayAwake = false;  // only while the app is there
+  if (connected != wasConnected) lastMotionMs = millis();  // connect/disconnect = activity
   wasConnected = connected;
-  uint32_t idleLimit = comm::bleConnected() ? CONNECTED_SLEEP_MS : settings.idleSleepMs;
   // Fresh millis() and signed math: lastMotionMs may have been set a moment
   // AFTER `now` (sampleOnce ran in between); unsigned "now - later" wraps to a
   // huge number and used to put the wand to sleep while it was moving.
   int32_t idleFor = (int32_t)(millis() - lastMotionMs);
-#if USE_SERIAL && SLEEP_DEBUG
-  static uint32_t lastSleepDbg = 0;
-  if (millis() - lastSleepDbg > 5000) {
-    lastSleepDbg = millis();
-    comm::outf("SLEEPDBG still %ld s of %lu s%s, motion %d (moving above %d), mode %d",
-               (long)(idleFor / 1000), (unsigned long)(idleLimit / 1000),
-               connected ? " (app connected)" : "", (int)lastEnergy, (int)STILL_ENERGY, (int)mode);
-  }
-#endif
-  // Warn the app 10 s before sleeping ("SLEEPSOON 10"), and say so if the
-  // wand was moved or talked to in the meantime ("SLEEPSOON cancel").
-  static bool warned = false;
-  bool sleepAllowed = mode == kNormal && !(connected && stayAwake);
-  if (sleepAllowed && idleLimit > 12000 && idleFor > (int32_t)idleLimit - 10000) {
-    if (!warned) {
-      warned = true;
-      comm::outf("SLEEPSOON %ld", (long)((int32_t)idleLimit - idleFor + 999) / 1000);
-    }
-  } else if (warned) {
-    warned = false;
-    comm::out("SLEEPSOON cancel");
-  }
-  if (sleepAllowed && !haptics::busy() && idleFor > (int32_t)idleLimit) goSleep("idle");
+  if (!connected && mode == kNormal && !haptics::busy() && idleFor > (int32_t)settings.idleSleepMs) goSleep("idle");
 
   // Let FreeRTOS idle the CPU until the next sample is due.
   int32_t waitUs = (int32_t)(nextSampleUs - micros());

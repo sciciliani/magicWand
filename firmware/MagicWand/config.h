@@ -63,7 +63,6 @@
 // ------------------------------------------------------------------ power
 // Deep sleep = EM4 (~2 uA). Waking from EM4 is a full reboot.
 #define IDLE_SLEEP_MS 30000UL
-#define CONNECTED_SLEEP_MS 120000UL  // while the app is connected (2 min)
 #define STILL_ENERGY 25.0f
 
 // How the wand notices it was picked up:
@@ -100,8 +99,6 @@
 #define USE_SERIAL 1
 // Log Bluetooth events and every line the app sends to the Serial Monitor.
 #define BLE_DEBUG 1
-// Every 5 s print how long the wand has been still and when it will sleep.
-#define SLEEP_DEBUG 1
 // Boot trace: blink + print each setup() step (adds ~2 s to each full boot).
 #define BOOT_TRACE 0
 

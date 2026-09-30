@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
   <header>
@@ -19,12 +19,6 @@
       </div>
     </div>
     <div class="header-actions">
-      <label class="toggle" title="Don't let the wand fall asleep while this app is connected">
-        <input type="checkbox" id="awakeToggle" disabled /> <span>Keep awake</span>
-      </label>
-      <label class="toggle" title="Recognize moves but don't send IR">
-        <input type="checkbox" id="testMode" disabled /> <span>Test mode</span>
-      </label>
       <button id="connectBtn">Release wand</button>
     </div>
   </header>
@@ -118,7 +112,7 @@
         <h2>Power</h2>
         <label>Sleep after <output id="sleepOut"></output>
           <input type="range" id="sleep" min="10" max="300" step="5" />
-          <span class="hint">No motion for this long puts the wand in deep sleep. Picking it up wakes it. While this app is connected it stays awake for 2 minutes instead, so you can work on it.</span>
+          <span class="hint">No motion for this long puts the wand in deep sleep. Picking it up wakes it. It never sleeps while this app is connected: use Sleep now to put it to sleep.</span>
         </label>
         <label>Wake sensitivity <output id="wakeOut"></output>
           <input type="range" id="wake" min="1" max="12" step="1" />
@@ -187,18 +181,7 @@
     </form>
   </dialog>
 
-  <!-- Wand says it will fall asleep soon -->
-  <div id="sleepWarn" class="sleep-warn" role="alert" hidden>
-    <span class="moon" aria-hidden="true">☾</span>
-    <div class="txt"><b>The wand falls asleep in <span id="sleepSecs">10</span> s</b>
-      <span class="small muted">Pick it up to keep it awake, or:</span></div>
-    <div class="row">
-      <button id="stayAwakeBtn" class="primary small">Keep awake while I configure</button>
-      <button id="snoozeBtn" class="small">Not yet</button>
-    </div>
-  </div>
-
   <div id="toast" class="toast" hidden></div>
-  <script type="module" src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

@@ -34,7 +34,7 @@ With these signals: **99.9%** recognized across 12 grips (every 30°, upside dow
 **0.1%** misfires, and only 0.5% of random handling (waving it around, picking it up) was
 taken for a spell. Run `make test` to reproduce. Caveat: that's a physics simulation
 of a hand with noise and human variation, not your real hand. Real numbers will be
-lower, and the app's Test mode is how you find out.
+lower, and the app's Live tab (Recent moves) is how you find out.
 
 ## From motion to spell
 
