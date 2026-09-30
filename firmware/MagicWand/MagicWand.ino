@@ -141,9 +141,6 @@ static void handle(char* line) {
 
   if (!strcmp(cmd, "HELLO") || !strcmp(cmd, "INFO")) {
     sendInfo();
-  } else if (!strcmp(cmd, "BYE")) {  // app is leaving: the WAND ends the link
-    streaming = false;
-    comm::hangUp();
   } else if (!strcmp(cmd, "PING")) {
     comm::out("PONG");
   } else if (!strcmp(cmd, "EXPORT")) {  // print a ready-to-paste default_spells.h
