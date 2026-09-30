@@ -652,6 +652,7 @@ void loop() {
   static bool wasConnected = false;
   bool connected = comm::bleConnected();
   if (connected != wasConnected) lastMotionMs = millis();  // connect/disconnect = activity
+  if (!connected && wasConnected) streaming = false;       // app gone: stop the motion stream
   wasConnected = connected;
   // Fresh millis() and signed math: lastMotionMs may have been set a moment
   // AFTER `now` (sampleOnce ran in between); unsigned "now - later" wraps to a

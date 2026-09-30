@@ -39,10 +39,20 @@ static void takeWrite() {
   }
 }
 
+// Serial-only debug line (never sent to the app).
+static void dbg(const char* a, const char* b = "") {
+#if USE_SERIAL && BLE_DEBUG
+  if (Serial) { Serial.print(a); Serial.print(b); Serial.print('\n'); }
+#else
+  (void)a; (void)b;
+#endif
+}
+
 static volatile bool evConnect = false, evDisconnect = false;
 static void onConnect(BLEDevice) { linkUp = true; evConnect = true; }
 
 static void onDisconnect(BLEDevice) {
+  dbg("BLE: app disconnected, restarting Bluetooth");
   linkUp = false;
   evDisconnect = true;
   bleLen = 0;
@@ -84,47 +94,55 @@ void begin(const char* bleName) {
   bleOk = true;
 }
 
-// Serial-only debug line (never sent to the app).
-static void dbg(const char* a, const char* b = "") {
-#if USE_SERIAL && BLE_DEBUG
-  if (Serial) { Serial.print(a); Serial.print(b); Serial.print('\n'); }
-#else
-  (void)a; (void)b;
-#endif
+
+// Everything that describes the current link is reset here, so nothing from
+// the previous connection is left behind for the next one.
+static void resetLinkState() {
+  linkUp = false;
+  evConnect = false;
+  evDisconnect = false;
+  bleLen = 0;
+  bleOverflow = false;
+  rxHead = rxTail = 0;
 }
 
 void poll() {
-  if (!bleOk) return;
-  BLE.poll();
   static bool wasSub = false;
+  static uint32_t retryAt = 0;
+  if (!bleOk) {  // a restart failed: try again every second
+    if (millis() < retryAt) return;
+    retryAt = millis() + 1000;
+    resetLinkState();
+    bleOk = startBle();
+    dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED, retrying");
+    return;
+  }
+  BLE.poll();
   if (evConnect) { evConnect = false; dbg("BLE: app connected"); }
   if (evDisconnect) {
-    evDisconnect = false;
+    // onDisconnect() only raises the flag: it runs INSIDE BLE.poll(), and the
+    // stack can't be shut down from inside its own event handler. Right after
+    // BLE.poll() returns, restart it so the next connection gets a fresh stack
+    // (only the first connection after boot used to work).
+    resetLinkState();
     wasSub = false;
-    // Only the FIRST connection after boot worked: later ones connected but
-    // never got past service discovery. Give every new connection a freshly
-    // started Bluetooth stack, like the first one had.
-    dbg("BLE: app disconnected, restarting Bluetooth");
     BLE.end();
     delay(50);
-    bleLen = 0;
-    rxHead = rxTail = 0;
     bleOk = startBle();
-    dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED");
+    retryAt = millis() + 1000;
+    dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED, retrying");
     return;
   }
   bool sub = linkUp && txChar.subscribed();
   if (sub != wasSub) { wasSub = sub; dbg(sub ? "BLE: app listening (notifications on)" : "BLE: app stopped listening"); }
   // Polled instead of an event handler: works the same on every ArduinoBLE port.
   if (rxChar.written()) takeWrite();
-  // Safety net: after a disconnect (or a USB plug/unplug glitch) advertising
-  // doesn't always restart by itself. Kick it every 5 s while nobody is connected.
+  // Safety net: while no app is connected, make sure we're advertising.
+  // Uses linkUp (from the connect/disconnect events), not BLE.connected(),
+  // which can keep reporting the old link after a restart.
   if (millis() - lastAdvCheck > 5000) {
     lastAdvCheck = millis();
-    if (!BLE.connected()) {
-      linkUp = false;
-      BLE.advertise();
-    }
+    if (!linkUp) BLE.advertise();
   }
 }
 
@@ -202,7 +220,9 @@ void outf(const char* fmt, ...) {
   out(buf);
 }
 
-bool bleConnected() { return bleOk && (linkUp || BLE.connected()); }
+// From the connect/disconnect events only (they're reliable; BLE.connected()
+// can keep reporting the previous link after a stack restart).
+bool bleConnected() { return bleOk && linkUp; }
 bool bleNotifying() { return bleConnected() && txChar.subscribed(); }
 
 void end() {
