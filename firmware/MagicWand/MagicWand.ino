@@ -5,7 +5,7 @@
 // Configure it from the web app (app/) over Bluetooth, or type the same
 // commands in a serial monitor (115200). Protocol: docs/PROTOCOL.md.
 //
-// Board package: "Silicon Labs" (Tools > Protocol stack > BLE (Arduino)).
+// Board package: "Silicon Labs" (Tools > Protocol stack > BLE (Silabs)).
 // Library: "Seeed Arduino LSM6DS3".
 #include <Arduino.h>
 #include <math.h>

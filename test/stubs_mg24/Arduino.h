@@ -1,6 +1,7 @@
 // Minimal stand-ins for the Silicon Labs Arduino core — ONLY for the host
 // compile check (make check-fw). Not a simulator.
 #pragma once
+#define ARDUINO_SILABS_STACK_BLE_SILABS 1  // Tools > Protocol stack > BLE (Silabs)
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -25,7 +26,7 @@ inline int digitalPinToInterrupt(int p) { return p; }
 void noInterrupts(); void interrupts();
 int analogRead(int); void analogReadResolution(int);
 uint32_t getCPUCycleCount(); uint32_t getCPUClock(); uint64_t getDeviceUniqueId(); void systemReset();
-class Print { public: size_t print(const char*); size_t print(char); size_t print(int); size_t print(unsigned int); size_t print(long); size_t println(const char*); size_t println(); };
+class Print { public: size_t print(const char*); size_t print(char); size_t print(int); size_t print(unsigned int); size_t print(long); size_t println(const char*); size_t println(); size_t printf(const char*, ...) __attribute__((format(printf, 2, 3))); };
 class Stream : public Print { public: int available(); int read(); };
 class UARTSerial : public Stream { public: void begin(int); void end(); void flush(); explicit operator bool() const; };
 extern UARTSerial Serial;

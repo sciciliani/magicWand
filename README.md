@@ -102,8 +102,8 @@ Keep it empty.
    `https://siliconlabs.github.io/arduino/package_arduinosilabs_index.json`
 2. **Tools → Board → Boards Manager**: install **Silicon Labs**.
 3. **Tools → Board → Silicon Labs → Seeed Studio XIAO MG24 (Sense)**.
-4. **Tools → Protocol stack → BLE (Arduino)**. Required.
-5. **Library Manager**: install **Seeed Arduino LSM6DS3** and **ArduinoBLE** (latest).
+4. **Tools → Protocol stack → BLE (Silabs)**. Required (the firmware uses the native Silicon Labs Bluetooth stack).
+5. **Library Manager**: install **Seeed Arduino LSM6DS3**.
 6. Plug in with a data USB-C cable, **Tools → Port → /dev/cu.usbmodem…**, open
    `firmware/MagicWand/MagicWand.ino`, Upload.
 

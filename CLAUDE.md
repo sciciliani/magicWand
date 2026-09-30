@@ -31,7 +31,7 @@ firmware/MagicWand/
   ir.*           TX: software 38 kHz carrier timed with getCPUCycleCount(), IRQs off only during marks
                  RX: TSOP edge ISR -> raw durations
   storage.*      NVM3 key/value (one object per item, chunked at 700 B) or EEPROM fallback (STORAGE_NVM3 0)
-  comm.*         ArduinoBLE NUS service + USB Serial, same text protocol; notifications in 20-byte chunks
+  comm.*         NUS on the native Silicon Labs BLE stack (Protocol stack: BLE (Silabs)) + USB Serial, same text protocol; notifications sized to the MTU
   haptics.*      non-blocking vibration patterns
   config.h       all pins and knobs
 ```
