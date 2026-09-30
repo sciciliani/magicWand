@@ -1,5 +1,5 @@
-// comm.h — text-line transport over BLE (Nordic UART Service, via the
-// ArduinoBLE API of the "BLE (Arduino)" protocol stack) and USB Serial.
+// comm.h — text-line transport over BLE (Nordic UART Service, on the native
+// Silicon Labs stack: Tools > Protocol stack > BLE (Silabs)) and USB Serial.
 // Both carry the same protocol (docs/PROTOCOL.md).
 #pragma once
 #include <stddef.h>

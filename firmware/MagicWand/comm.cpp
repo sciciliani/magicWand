@@ -1,47 +1,84 @@
+// comm.cpp — Nordic UART Service on the native Silicon Labs Bluetooth stack
+// (Tools > Protocol stack > BLE (Silabs)) plus USB Serial.
+//
+// Why not ArduinoBLE: on this board its writeValue() never returned when the
+// app went away mid-send (the loop froze in notify()), and GATT discovery hung
+// on the second connection. The native stack is what ArduinoBLE sits on top of
+// anyway; here we talk to it directly:
+//   - sl_bt_on_event() runs in the stack's own RTOS task. It only updates
+//     variables and restarts advertising; no Serial, no waiting.
+//   - Sending is sl_bt_gatt_server_send_notification(): it queues and returns
+//     at once, with an error if the link is gone or the queue is full. It can't
+//     hang the loop.
+//   - A disconnect clears every piece of link state, then advertising restarts
+//     from the event itself (so it happens even if loop() is busy).
+#ifndef ARDUINO_SILABS_STACK_BLE_SILABS
+#error "Select Tools > Protocol stack > BLE (Silabs). This firmware uses the native Silicon Labs Bluetooth stack."
+#endif
+
 #include "comm.h"
 
 #include <Arduino.h>
-#include <ArduinoBLE.h>  // needs Tools > Protocol stack > BLE (Arduino)
+#include <sl_bluetooth.h>
 #include <stdarg.h>
 #include <string.h>
 
 #include "config.h"
 #include "power.h"
 
+// 1 = restart the whole chip after every disconnect (the old ArduinoBLE
+// workaround). The native stack shouldn't need it; flip it if reconnects fail.
+#ifndef BLE_REBOOT_ON_DISCONNECT
+#define BLE_REBOOT_ON_DISCONNECT 0
+#endif
+
 namespace comm {
 
-
-// Nordic UART Service — same UUIDs the web app looks for.
-static BLEService nus("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
-static BLECharacteristic rxChar("6E400002-B5A3-F393-E0A9-E50E24DCCA9E", BLEWrite | BLEWriteWithoutResponse, 244);
-static BLECharacteristic txChar("6E400003-B5A3-F393-E0A9-E50E24DCCA9E", BLENotify, 244);
+// Nordic UART Service, UUIDs in little-endian byte order (as the stack wants).
+// 6E400001-B5A3-F393-E0A9-E50E24DCCA9E  service
+// 6E400002-...                          RX: the app writes here
+// 6E400003-...                          TX: we notify here
+static const uuid_128 kNusService = {{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+                                      0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E}};
+static const uuid_128 kNusRx = {{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+                                 0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E}};
+static const uuid_128 kNusTx = {{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+                                 0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E}};
+static const uint16_t kMaxPayload = 244;  // biggest notification we send (MTU 247 - 3)
 
 static const size_t kLineMax = 4096;
 static const size_t kRxRing = 4096;
-static char rxRing[kRxRing];  // bytes written by the app, drained by readLine()
-static volatile size_t rxHead = 0, rxTail = 0;
 
+// ---- written by the Bluetooth event task, read by loop() -----------------
+static char rxRing[kRxRing];                 // bytes the app wrote (event task -> loop)
+static volatile size_t rxHead = 0;           // only the event task moves this
+static volatile size_t rxTail = 0;           // only loop() moves this
+static volatile size_t rxCloseMark = 0;      // rxHead when the last link closed
+static volatile bool booted = false;         // stack is up (system_boot event)
+static volatile bool linkUp = false;
+static volatile bool subscribed = false;     // app turned notifications on
+static volatile uint8_t conn = SL_BT_INVALID_CONNECTION_HANDLE;
+static volatile uint16_t payload = 20;       // notification size for this link
+static volatile uint16_t closeReason = 0;
+static volatile uint32_t opens = 0, closes = 0;
+static volatile bool advFailed = false;      // restart advertising failed: poll() retries
+static volatile bool stopping = false;       // end() ran: don't advertise again
+
+// ---- set once at start-up ------------------------------------------------
+static uint16_t rxHandle = 0, txHandle = 0;
+static uint8_t advSet = 0xFF;
+static bool started = false;  // GATT database + advertising are set up
+static char advName[24] = "Wand";
+
+// ---- loop() only -----------------------------------------------------------
 static char bleLine[kLineMax];
 static size_t bleLen = 0;
 static char serLine[kLineMax];
 static size_t serLen = 0;
 static bool bleOverflow = false, serOverflow = false;
-static bool bleOk = false;
-static volatile bool linkUp = false;  // tracked from connect/disconnect events
+static char txBuf[kLineMax + 1];
 
-// Copy whatever the app just wrote into the RX ring.
-static void takeWrite() {
-  const uint8_t* v = rxChar.value();
-  int n = rxChar.valueLength();
-  for (int i = 0; i < n; i++) {
-    size_t next = (rxHead + 1) % kRxRing;
-    if (next == rxTail) break;  // full: drop
-    rxRing[rxHead] = (char)v[i];
-    rxHead = next;
-  }
-}
-
-// Serial-only debug line (never sent to the app).
+// Serial-only debug line (never sent to the app). Only called from loop().
 static void dbg(const char* a, const char* b = "") {
 #if USE_SERIAL && BLE_DEBUG
   if (Serial) { Serial.print(a); Serial.print(b); Serial.print('\n'); }
@@ -50,102 +87,129 @@ static void dbg(const char* a, const char* b = "") {
 #endif
 }
 
-static volatile bool evConnect = false, evDisconnect = false;
-static void onConnect(BLEDevice) { linkUp = true; evConnect = true; }
-
-static void onDisconnect(BLEDevice) {
-  // NOTHING slow in here (no Serial prints): this handler runs inside the
-  // Bluetooth stack. Printing from it froze the wand (the first line got out,
-  // the second one never did, then the watchdog fired). Just raise flags;
-  // poll() does the logging and the restart.
-  linkUp = false;
-  evDisconnect = true;
-  bleLen = 0;
-  rxHead = rxTail = 0;
+static sl_status_t startAdvertising() {
+  sl_status_t sc = sl_bt_legacy_advertiser_generate_data(advSet, sl_bt_advertiser_general_discoverable);
+  if (sc == SL_STATUS_OK) sc = sl_bt_legacy_advertiser_start(advSet, sl_bt_advertiser_connectable_scannable);
+  return sc;
 }
 
-static uint32_t lastAdvCheck = 0;
-static char advName[24] = "Wand";
-
-// Start (or restart) the Bluetooth stack with our service and advertise.
-static bool startBle() {
-  if (!BLE.begin()) return false;
-  const char* bleName = advName;
-  BLE.setLocalName(bleName);
-  BLE.setDeviceName(bleName);
-  static bool charsAdded = false;  // the service object keeps them across restarts
-  if (!charsAdded) {
-    nus.addCharacteristic(rxChar);
-    nus.addCharacteristic(txChar);
-    charsAdded = true;
+// Build the GATT database (Generic Access with our name + NUS) and advertise.
+// Runs from poll() once the stack has booted and begin() has given us the name.
+static void setUp() {
+  static uint32_t retryAt = 0;
+  if (started || !booted || millis() < retryAt) return;
+  retryAt = millis() + 2000;
+  const char* step = "gattdb session";
+  uint16_t session = 0, gap = 0, nameChar = 0, nus = 0;
+  sl_status_t sc = sl_bt_gattdb_new_session(&session);
+  if (sc == SL_STATUS_OK) {
+    step = "generic access";
+    const uint8_t gapUuid[] = {0x00, 0x18};
+    sc = sl_bt_gattdb_add_service(session, sl_bt_gattdb_primary_service, SL_BT_GATTDB_ADVERTISED_SERVICE,
+                                  sizeof(gapUuid), gapUuid, &gap);
   }
-  BLE.addService(nus);
-  BLE.setEventHandler(BLEConnected, onConnect);
-  BLE.setEventHandler(BLEDisconnected, onDisconnect);
-  // The 128-bit service UUID + name don't both fit in one advertisement;
-  // the app finds the wand by name ("Wand-…") and then opens the service.
-  BLE.setAdvertisingInterval(320);  // 200 ms (units of 0.625 ms)
-  BLE.advertise();
-  return true;
+  if (sc == SL_STATUS_OK) {
+    step = "device name";
+    const sl_bt_uuid_16_t nameUuid = {{0x00, 0x2A}};
+    uint16_t len = (uint16_t)strlen(advName);
+    sc = sl_bt_gattdb_add_uuid16_characteristic(session, gap, SL_BT_GATTDB_CHARACTERISTIC_READ, 0, 0, nameUuid,
+                                                sl_bt_gattdb_fixed_length_value, len, len,
+                                                (const uint8_t*)advName, &nameChar);
+  }
+  if (sc == SL_STATUS_OK) sc = sl_bt_gattdb_start_service(session, gap);
+  if (sc == SL_STATUS_OK) {
+    step = "uart service";
+    // Not flagged "advertised": a 128-bit UUID plus the name don't fit in one
+    // advertisement. The app finds the wand by name ("Wand-…").
+    sc = sl_bt_gattdb_add_service(session, sl_bt_gattdb_primary_service, 0, sizeof(kNusService.data),
+                                  kNusService.data, &nus);
+  }
+  const uint8_t zero = 0;
+  if (sc == SL_STATUS_OK) {
+    step = "rx characteristic";
+    sc = sl_bt_gattdb_add_uuid128_characteristic(
+        session, nus, SL_BT_GATTDB_CHARACTERISTIC_WRITE | SL_BT_GATTDB_CHARACTERISTIC_WRITE_NO_RESPONSE, 0, 0,
+        kNusRx, sl_bt_gattdb_variable_length_value, kMaxPayload, 1, &zero, &rxHandle);
+  }
+  if (sc == SL_STATUS_OK) {
+    step = "tx characteristic";
+    sc = sl_bt_gattdb_add_uuid128_characteristic(session, nus, SL_BT_GATTDB_CHARACTERISTIC_NOTIFY, 0, 0, kNusTx,
+                                                 sl_bt_gattdb_variable_length_value, kMaxPayload, 1, &zero,
+                                                 &txHandle);
+  }
+  if (sc == SL_STATUS_OK) sc = sl_bt_gattdb_start_service(session, nus);
+  if (sc == SL_STATUS_OK) { step = "gattdb commit"; sc = sl_bt_gattdb_commit(session); }
+  if (sc != SL_STATUS_OK) {
+    if (session) sl_bt_gattdb_abort(session);
+    outf("ERR BLE setup failed at %s (0x%04lx), retrying", step, (unsigned long)sc);
+    return;
+  }
+
+  uint16_t mtuOut = 0;
+  sl_bt_gatt_server_set_max_mtu(kMaxPayload + 3, &mtuOut);  // best effort
+
+  sc = sl_bt_advertiser_create_set(&advSet);
+  if (sc == SL_STATUS_OK) sc = sl_bt_advertiser_set_timing(advSet, 320, 320, 0, 0);  // 200 ms
+  if (sc == SL_STATUS_OK) sc = startAdvertising();
+  if (sc != SL_STATUS_OK) {
+    outf("ERR BLE advertising failed (0x%04lx), retrying", (unsigned long)sc);
+    advFailed = true;  // GATT is in place; poll() only retries advertising
+  }
+  started = true;
+  dbg("BLE: advertising as ", advName);
 }
 
 void begin(const char* bleName) {
   // (Serial.begin() already ran at the top of setup().)
   strncpy(advName, bleName, sizeof(advName) - 1);
-  if (!startBle()) {
-    out("ERR BLE.begin failed: select Tools > Protocol stack > BLE (Arduino)");
-    return;
-  }
-  bleOk = true;
-}
-
-
-// Everything that describes the current link is reset here, so nothing from
-// the previous connection is left behind for the next one.
-static void resetLinkState() {
-  linkUp = false;
-  evConnect = false;
-  evDisconnect = false;
-  bleLen = 0;
-  bleOverflow = false;
-  rxHead = rxTail = 0;
+  setUp();  // may be too early (stack not booted yet): poll() finishes the job
 }
 
 void poll() {
   power::where(2);  // comm::poll start
-  static bool wasSub = false;
-  static uint32_t retryAt = 0;
-  if (!bleOk) {  // a restart failed: try again every second
-    if (millis() < retryAt) return;
-    retryAt = millis() + 1000;
-    resetLinkState();
-    bleOk = startBle();
-    dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED, retrying");
+  if (!started) {
+    setUp();
     return;
   }
-  power::where(3);  // inside BLE.poll()
-  BLE.poll();
-  power::where(4);  // comm::poll after BLE.poll
-  if (evConnect) { evConnect = false; dbg("BLE: app connected"); }
-  if (evDisconnect) {
-    // Restarting just the Bluetooth stack (BLE.end() + BLE.begin()) hung the
-    // wand on this board. Restart the whole chip instead (~2 s, no buzz): the
-    // next connection gets exactly the fresh state the first one after
-    // power-up had, with nothing left over from the old link.
-    dbg("BLE: app disconnected");
-    dbg("BLE: restarting the wand for a fresh Bluetooth stack");
+  power::where(4);  // comm::poll events
+  static uint32_t seenOpens = 0, seenCloses = 0;
+  static bool wasSub = false;
+  static uint32_t advRetryAt = 0;
+
+  if (closes != seenCloses) {
+    seenCloses = closes;
+    // Everything from the old link goes: unread bytes (up to where the link
+    // closed) and any half-received line. Bytes after the mark belong to a
+    // new connection and are kept.
+    size_t mark = rxCloseMark, tail = rxTail, head = rxHead;
+    if ((mark - tail + kRxRing) % kRxRing <= (head - tail + kRxRing) % kRxRing) rxTail = mark;
+    bleLen = 0;
+    bleOverflow = false;
+    wasSub = false;
+#if USE_SERIAL && BLE_DEBUG
+    char r[40];
+    snprintf(r, sizeof(r), " (reason 0x%04x)", (unsigned)closeReason);
+    dbg("BLE: app disconnected", r);
+#endif
+#if BLE_REBOOT_ON_DISCONNECT
     power::quietRestart();
+#endif
   }
-  bool sub = linkUp && txChar.subscribed();
-  if (sub != wasSub) { wasSub = sub; dbg(sub ? "BLE: app listening (notifications on)" : "BLE: app stopped listening"); }
-  // Polled instead of an event handler: works the same on every ArduinoBLE port.
-  if (rxChar.written()) takeWrite();
-  // Safety net: while no app is connected, make sure we're advertising.
-  // Uses linkUp (from the connect/disconnect events), not BLE.connected(),
-  // which can keep reporting the old link after a restart.
-  if (millis() - lastAdvCheck > 5000) {
-    lastAdvCheck = millis();
-    if (!linkUp) BLE.advertise();
+  if (opens != seenOpens) {
+    seenOpens = opens;
+    dbg("BLE: app connected");
+  }
+  bool sub = linkUp && subscribed;
+  if (sub != wasSub) {
+    wasSub = sub;
+    dbg(sub ? "BLE: app listening (notifications on)" : "BLE: app stopped listening");
+  }
+  if (advFailed && !linkUp && !stopping && millis() >= advRetryAt) {
+    advRetryAt = millis() + 1000;
+    if (startAdvertising() == SL_STATUS_OK) {
+      advFailed = false;
+      dbg("BLE: advertising again");
+    }
   }
 }
 
@@ -188,20 +252,20 @@ char* readLine() {
   return nullptr;
 }
 
-// Send in 20-byte chunks. Stops as soon as the link is gone (linkUp is
-// cleared by the disconnect event) and gives up on a line after ~20 ms of full
-// buffers: writing into a link that just died is where the wand froze (the
-// motion stream was mid-send when the app disconnected).
+// Queue notifications. Never waits for the other side: if the queue is full we
+// retry for at most ~20 ms, if the link is gone we stop at once.
 static void notify(const char* p, size_t n) {
   power::where(8);  // notify(): sending to the app
   while (n > 0) {
-    if (!linkUp) return;
-    size_t k = n < BLE_NOTIFY_CHUNK ? n : BLE_NOTIFY_CHUNK;
+    uint8_t c = conn;
+    if (!linkUp || c == SL_BT_INVALID_CONNECTION_HANDLE) return;
+    size_t k = payload;
+    if (k > n) k = n;
     int tries = 0;
-    while (!txChar.writeValue((const uint8_t*)p, k)) {
-      if (!linkUp || ++tries > 10) return;
-      BLE.poll();
-      delay(2);
+    sl_status_t sc;
+    while ((sc = sl_bt_gatt_server_send_notification(c, txHandle, k, (const uint8_t*)p)) != SL_STATUS_OK) {
+      if (sc != SL_STATUS_NO_MORE_RESOURCE || !linkUp || ++tries > 20) return;  // drop the rest
+      delay(1);
     }
     p += k;
     n -= k;
@@ -215,8 +279,14 @@ void out(const char* line) {
     Serial.print('\n');
   }
 #endif
-  if (bleNotifying()) {
-    notify(line, strlen(line));
+  if (!bleNotifying()) return;
+  size_t n = strlen(line);
+  if (n < kLineMax) {  // line + '\n' in one go: fewer notifications
+    memcpy(txBuf, line, n);
+    txBuf[n] = '\n';
+    notify(txBuf, n + 1);
+  } else {
+    notify(line, n);
     notify("\n", 1);
   }
 }
@@ -230,18 +300,82 @@ void outf(const char* fmt, ...) {
   out(buf);
 }
 
-// From the connect/disconnect events only (they're reliable; BLE.connected()
-// can keep reporting the previous link after a stack restart).
-bool bleConnected() { return bleOk && linkUp; }
-bool bleNotifying() { return bleConnected() && txChar.subscribed(); }
+bool bleConnected() { return started && linkUp; }
+bool bleNotifying() { return bleConnected() && subscribed; }
 
 void end() {
-  if (bleOk) {
-    if (BLE.connected()) BLE.disconnect();
-    BLE.stopAdvertise();
-    BLE.end();
+  stopping = true;
+  if (started) {
+    uint8_t c = conn;
+    if (c != SL_BT_INVALID_CONNECTION_HANDLE) sl_bt_connection_close(c);
+    sl_bt_advertiser_stop(advSet);
+    delay(100);  // let the disconnect reach the app before the radio goes off
   }
   Serial.end();  // an open Serial can stop the MG24 waking from EM4 (Seeed forum)
 }
 
+// ---- event task side -----------------------------------------------------
+static void onEvent(sl_bt_msg_t* evt) {
+  switch (SL_BT_MSG_ID(evt->header)) {
+    case sl_bt_evt_system_boot_id:
+      booted = true;
+      break;
+
+    case sl_bt_evt_connection_opened_id:
+      conn = evt->data.evt_connection_opened.connection;
+      payload = 20;
+      subscribed = false;
+      linkUp = true;
+      opens = opens + 1;
+      break;
+
+    case sl_bt_evt_connection_closed_id:
+      if (evt->data.evt_connection_closed.connection != conn) break;
+      linkUp = false;
+      subscribed = false;
+      conn = SL_BT_INVALID_CONNECTION_HANDLE;
+      payload = 20;
+      closeReason = evt->data.evt_connection_closed.reason;
+      rxCloseMark = rxHead;
+      closes = closes + 1;
+      if (!stopping && startAdvertising() != SL_STATUS_OK) advFailed = true;
+      break;
+
+    case sl_bt_evt_gatt_mtu_exchanged_id: {
+      uint16_t mtu = evt->data.evt_gatt_mtu_exchanged.mtu;
+      uint16_t p = mtu > 3 ? mtu - 3 : 20;
+      payload = p > kMaxPayload ? kMaxPayload : p;
+      break;
+    }
+
+    case sl_bt_evt_gatt_server_characteristic_status_id: {
+      const sl_bt_evt_gatt_server_characteristic_status_t& s = evt->data.evt_gatt_server_characteristic_status;
+      if (s.characteristic == txHandle && s.status_flags == sl_bt_gatt_server_client_config)
+        subscribed = (s.client_config_flags & sl_bt_gatt_server_notification) != 0;
+      break;
+    }
+
+    case sl_bt_evt_gatt_server_attribute_value_id: {
+      const sl_bt_evt_gatt_server_attribute_value_t& a = evt->data.evt_gatt_server_attribute_value;
+      if (a.attribute != rxHandle || a.connection != conn) break;
+      size_t h = rxHead;
+      for (uint8_t i = 0; i < a.value.len; i++) {
+        size_t next = (h + 1) % kRxRing;
+        if (next == rxTail) break;  // full: drop
+        rxRing[h] = (char)a.value.data[i];
+        h = next;
+      }
+      __sync_synchronize();  // bytes land before loop() sees the new head
+      rxHead = h;
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
 }  // namespace comm
+
+// Called by the Silicon Labs Bluetooth stack for every event (its own task).
+void sl_bt_on_event(sl_bt_msg_t* evt) { comm::onEvent(evt); }

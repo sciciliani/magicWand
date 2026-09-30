@@ -17,12 +17,15 @@
 <button id="go">1. Pick wand &amp; connect</button>
 <button id="ping">2. Send PING</button>
 <button id="hello">3. Send HELLO</button>
+<button id="s1">Stream ON</button>
+<button id="s0">Stream OFF</button>
 <button id="bye">Disconnect</button>
 <div id="log"></div>
 <script>
 const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e', TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const logEl = document.getElementById('log');
+let fCount = 0;
 const t0 = performance.now();
 function log(msg, cls = '') {
   const line = document.createElement('div');
@@ -55,6 +58,8 @@ document.getElementById('go').onclick = async () => {
     const tx = await svc.getCharacteristic(TX);
     tx.addEventListener('characteristicvaluechanged', (e) => {
       const txt = new TextDecoder().decode(e.target.value);
+      // Motion lines ("F …") come 50 per second: count them instead of logging each.
+      if (/^F /.test(txt)) { if (++fCount % 50 === 1) log(`RX motion lines: ${fCount}`, 'rx'); return; }
       log(`RX ${JSON.stringify(txt)}`, 'rx');
     });
     log('startNotifications…');
@@ -78,6 +83,8 @@ async function send(text) {
 }
 document.getElementById('ping').onclick = () => send('PING');
 document.getElementById('hello').onclick = () => send('HELLO');
+document.getElementById('s1').onclick = () => { fCount = 0; send('STREAM 1'); };
+document.getElementById('s0').onclick = () => send('STREAM 0');
 document.getElementById('bye').onclick = () => { device?.gatt?.disconnect(); log('disconnect requested'); };
 </script>
 </body>

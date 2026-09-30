@@ -10,7 +10,7 @@ SKETCH_NRF:= firmware/MagicWand_nRF52840
 # VERIFY with: arduino-cli board listall | grep -i xiao
 FQBN      ?= SiliconLabs:silabs:xiao_mg24
 # VERIFY with: arduino-cli board details -b $(FQBN)   (look for the protocol stack option)
-BOARD_OPTS?= --board-options "protocol_stack=ble_arduino"
+BOARD_OPTS?= --board-options "protocol_stack=ble_silabs"
 FQBN_NRF  ?= Seeeduino:nrf52:xiaonRF52840Sense
 PORT      ?= $(shell ls /dev/cu.usbmodem* /dev/ttyACM* 2>/dev/null | head -1)
 SILABS_URL:= https://siliconlabs.github.io/arduino/package_arduinosilabs_index.json
