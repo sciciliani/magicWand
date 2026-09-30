@@ -1,7 +1,7 @@
 // app.js — Wand Workshop: configure the wand over Web Bluetooth.
 // Protocol reference: docs/PROTOCOL.md
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=8';
-import { LIBRARY } from './ir-presets.js?v=8';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=9';
+import { LIBRARY } from './ir-presets.js?v=9';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -96,7 +96,24 @@ async function connectTo(device) {
 }
 
 $('#findBtn').addEventListener('click', () => connectTo(null));
-$('#connectBtn').addEventListener('click', () => state.link?.disconnect());
+$('#connectBtn').addEventListener('click', () => { stopStream(); setTimeout(() => state.link?.disconnect(), 300); });
+
+// Stop the motion stream BEFORE the page goes away. If the link drops while
+// the wand is in the middle of sending a stream line, the Bluetooth library
+// on the wand never returns and the wand freezes (until the watchdog resets
+// it). So: stream off when the tab is hidden (switching away or closing both
+// hide it first, while the page can still send), on again when it's back.
+function stopStream() {
+  if (!state.link) return;
+  try { state.link.sendNow ? state.link.sendNow('STREAM 0') : state.link.send('STREAM 0'); } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (!state.link) return;
+  if (document.visibilityState === 'hidden') stopStream();
+  else send('STREAM 1');
+});
+window.addEventListener('pagehide', stopStream);
+window.addEventListener('beforeunload', stopStream);
 
 function onClosed() {
   const name = state.info?.name || state.link?.name || 'the wand';

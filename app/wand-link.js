@@ -71,6 +71,13 @@ export class BleWand {
 
   disconnect() { this.device?.gatt?.connected && this.device.gatt.disconnect(); }
 
+  /** Immediate write that skips the queue (used while the page is closing). */
+  sendNow(line) {
+    const bytes = this._enc.encode(line + '\n');
+    const w = this.rx?.writeValueWithoutResponse ? this.rx.writeValueWithoutResponse(bytes) : this.rx?.writeValue(bytes);
+    w?.catch?.(() => {});
+  }
+
   _onData(dv) {
     this._buf += this._dec.decode(dv, { stream: true });
     let i;
