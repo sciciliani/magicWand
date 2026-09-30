@@ -180,11 +180,17 @@ char* readLine() {
   return nullptr;
 }
 
+// Send in 20-byte chunks. Stops as soon as the link is gone (linkUp is
+// cleared by the disconnect event) and gives up on a line after ~20 ms of full
+// buffers: writing into a link that just died is where the wand froze (the
+// motion stream was mid-send when the app disconnected).
 static void notify(const char* p, size_t n) {
   while (n > 0) {
+    if (!linkUp) return;
     size_t k = n < BLE_NOTIFY_CHUNK ? n : BLE_NOTIFY_CHUNK;
-    // The stack has only a few TX buffers: if one isn't free, let it send.
-    for (int tries = 0; tries < 50 && !txChar.writeValue((const uint8_t*)p, k); tries++) {
+    int tries = 0;
+    while (!txChar.writeValue((const uint8_t*)p, k)) {
+      if (!linkUp || ++tries > 10) return;
       BLE.poll();
       delay(2);
     }

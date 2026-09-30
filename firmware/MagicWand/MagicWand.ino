@@ -19,6 +19,7 @@
 #include "imu.h"
 #include "ir.h"
 #include "power.h"
+#include <WatchdogTimer.h>  // Silicon Labs core library
 #include "status.h"
 #include "storage.h"
 
@@ -565,6 +566,9 @@ void setup() {
 #endif
   status::begin();
 
+  // Watchdog: if the loop ever freezes for 4 s (e.g. stuck inside the Bluetooth
+  // library), the chip restarts itself quietly; the BOOT line then says WATCHDOG.
+  WatchdogTimer.begin(WDOG_PERIOD_4_S);
   if (!power::quietBoot()) haptics::play(haptics::kWake);  // no buzz after a Bluetooth restart
   lastMotionMs = millis();
   nextSampleUs = micros();
@@ -573,6 +577,7 @@ void setup() {
 }
 
 void loop() {
+  WatchdogTimer.feed();
   haptics::update();
   {
     static uint32_t lastBatCheck = 0;

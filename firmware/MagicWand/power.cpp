@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ArduinoLowPower.h>  // bundled with the Silicon Labs core
+#include <WatchdogTimer.h>    // Silicon Labs core library
 #include <math.h>
 #include <string.h>
 
@@ -35,6 +36,14 @@ static void sleepAgain() {
 
 void earlyBoot() {
   quiet = LowPower.deepSleepMemoryRead(kQuietAddr) == kQuietMagic;
+  // (Checked only when this isn't a wake-up from sleep, so a stale watchdog
+  // flag can never stop the sleep checks from going back to sleep.)
+  if (!LowPower.wokeUpFromDeepSleep() && WatchdogTimer.watchdogResetHappened()) {
+    quiet = true;
+    LowPower.deepSleepMemoryWrite(kQuietAddr, 0);
+    snprintf(why, sizeof(why), "WATCHDOG: the wand had frozen and restarted itself");
+    return;
+  }
   if (quiet) {
     LowPower.deepSleepMemoryWrite(kQuietAddr, 0);
     snprintf(why, sizeof(why), "bluetooth restart after disconnect");
@@ -142,6 +151,7 @@ static void onWake() {}
 #endif
 
 void deepSleep() {
+  WatchdogTimer.end();  // don't let it fire while the wand sleeps
   haptics::off();
   status::off();
   ir::stopLearn();
