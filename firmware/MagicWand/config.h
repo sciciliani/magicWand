@@ -94,6 +94,7 @@
 
 // ------------------------------------------------------------------ BLE
 #define BLE_NOTIFY_CHUNK 20      // bytes per notification (safe for MTU 23)
+#define BLE_START_DELAY_MS 1500  // don't start Bluetooth before this long after reset (see comm.cpp)
 // USB serial (debug). Set 0 for battery-only use: an open serial link to the
 // on-board USB chip can make BLE and deep sleep misbehave once USB is unplugged.
 #define USE_SERIAL 1
