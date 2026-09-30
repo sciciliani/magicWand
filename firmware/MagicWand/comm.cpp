@@ -203,6 +203,19 @@ void outf(const char* fmt, ...) {
 }
 
 bool bleConnected() { return bleOk && (linkUp || BLE.connected()); }
+// When the app disconnects, the wand often never gets a "disconnected" event
+// (the link stays up on the Mac's side and the wand keeps streaming into it).
+// So the app says BYE and the WAND ends the link, then restarts Bluetooth
+// exactly like after a normal disconnect.
+void hangUp() {
+  if (!bleOk) return;
+  dbg("BLE: app said BYE, disconnecting");
+  BLE.disconnect();
+  for (uint32_t t = millis(); millis() - t < 100;) BLE.poll();
+  linkUp = false;
+  evDisconnect = true;  // poll() restarts the stack
+}
+
 bool bleNotifying() { return bleConnected() && txChar.subscribed(); }
 
 void end() {

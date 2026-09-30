@@ -26,6 +26,7 @@ char* readLine();  // complete incoming line or nullptr; valid until next call
 void out(const char* line);
 void outf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 bool bleConnected();
+void hangUp();  // app said BYE: drop the link and restart Bluetooth
 bool bleNotifying();
 void end();        // before deep sleep
 

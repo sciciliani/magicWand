@@ -1,7 +1,7 @@
 // app.js — Wand Workshop: configure the wand over Web Bluetooth.
 // Protocol reference: docs/PROTOCOL.md
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=8';
-import { LIBRARY } from './ir-presets.js?v=8';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=9';
+import { LIBRARY } from './ir-presets.js?v=9';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -96,7 +96,17 @@ async function connectTo(device) {
 }
 
 $('#findBtn').addEventListener('click', () => connectTo(null));
-$('#connectBtn').addEventListener('click', () => state.link?.disconnect());
+// Leaving: tell the wand BYE so IT ends the link (when only the app lets go,
+// the wand often never hears about it and keeps streaming).
+function sayBye(thenDisconnect = true) {
+  const link = state.link;
+  if (!link) return;
+  try { link.sendNow ? link.sendNow('BYE') : link.send('BYE'); } catch {}
+  if (thenDisconnect) setTimeout(() => link.disconnect(), 300);
+}
+$('#connectBtn').addEventListener('click', () => sayBye());
+window.addEventListener('pagehide', () => sayBye(false));
+window.addEventListener('beforeunload', () => sayBye(false));
 
 function onClosed() {
   const name = state.info?.name || state.link?.name || 'the wand';
