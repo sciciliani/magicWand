@@ -50,18 +50,20 @@ static void onDisconnect(BLEDevice) {
 }
 
 static uint32_t lastAdvCheck = 0;
+static char advName[24] = "Wand";
 
-void begin(const char* bleName) {
-  // (Serial.begin() already ran at the top of setup().)
-  if (!BLE.begin()) {
-    out("ERR BLE.begin failed: select Tools > Protocol stack > BLE (Arduino)");
-    return;
-  }
-  bleOk = true;
+// Start (or restart) the Bluetooth stack with our service and advertise.
+static bool startBle() {
+  if (!BLE.begin()) return false;
+  const char* bleName = advName;
   BLE.setLocalName(bleName);
   BLE.setDeviceName(bleName);
-  nus.addCharacteristic(rxChar);
-  nus.addCharacteristic(txChar);
+  static bool charsAdded = false;  // the service object keeps them across restarts
+  if (!charsAdded) {
+    nus.addCharacteristic(rxChar);
+    nus.addCharacteristic(txChar);
+    charsAdded = true;
+  }
   BLE.addService(nus);
   BLE.setEventHandler(BLEConnected, onConnect);
   BLE.setEventHandler(BLEDisconnected, onDisconnect);
@@ -69,6 +71,17 @@ void begin(const char* bleName) {
   // the app finds the wand by name ("Wand-…") and then opens the service.
   BLE.setAdvertisingInterval(320);  // 200 ms (units of 0.625 ms)
   BLE.advertise();
+  return true;
+}
+
+void begin(const char* bleName) {
+  // (Serial.begin() already ran at the top of setup().)
+  strncpy(advName, bleName, sizeof(advName) - 1);
+  if (!startBle()) {
+    out("ERR BLE.begin failed: select Tools > Protocol stack > BLE (Arduino)");
+    return;
+  }
+  bleOk = true;
 }
 
 // Serial-only debug line (never sent to the app).
@@ -85,7 +98,21 @@ void poll() {
   BLE.poll();
   static bool wasSub = false;
   if (evConnect) { evConnect = false; dbg("BLE: app connected"); }
-  if (evDisconnect) { evDisconnect = false; wasSub = false; dbg("BLE: app disconnected, advertising again"); }
+  if (evDisconnect) {
+    evDisconnect = false;
+    wasSub = false;
+    // Only the FIRST connection after boot worked: later ones connected but
+    // never got past service discovery. Give every new connection a freshly
+    // started Bluetooth stack, like the first one had.
+    dbg("BLE: app disconnected, restarting Bluetooth");
+    BLE.end();
+    delay(50);
+    bleLen = 0;
+    rxHead = rxTail = 0;
+    bleOk = startBle();
+    dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED");
+    return;
+  }
   bool sub = linkUp && txChar.subscribed();
   if (sub != wasSub) { wasSub = sub; dbg(sub ? "BLE: app listening (notifications on)" : "BLE: app stopped listening"); }
   // Polled instead of an event handler: works the same on every ArduinoBLE port.
