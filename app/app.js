@@ -107,16 +107,19 @@ function stopStream() {
   if (!state.link) return;
   try { state.link.sendNow ? state.link.sendNow('STREAM 0') : state.link.send('STREAM 0'); } catch {}
 }
+// TEST (ble-silabs): page-exit STREAM 0 disabled so the wand gets a link that
+// drops mid-stream on close/reload. Uncomment the three marked lines to restore.
 document.addEventListener('visibilitychange', () => {
   if (!state.link) return;
-  if (document.visibilityState === 'hidden') stopStream();
+  if (document.visibilityState === 'hidden') { /* TEST stopStream(); */ }
   else updateStream();
 });
-window.addEventListener('pagehide', stopStream);
+// TEST window.addEventListener('pagehide', stopStream);
 // Closing or reloading while connected: send STREAM 0 and ask "Leave site?".
 // Chrome doesn't wait for Bluetooth writes once the page is going away; the
 // dialog keeps the page alive long enough for STREAM 0 to reach the wand.
 // (Chrome shows its own text; pages can't set the message.)
+/* TEST
 window.addEventListener('beforeunload', (e) => {
   if (!state.link) return;
   stopStream();
@@ -124,6 +127,7 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
   setTimeout(updateStream, 1000);  // only runs if the user chose to stay
 });
+*/
 
 function onClosed() {
   const name = state.info?.name || state.link?.name || 'the wand';
