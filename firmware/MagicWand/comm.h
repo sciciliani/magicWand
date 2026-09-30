@@ -21,9 +21,6 @@ struct FX {
 namespace comm {
 
 void begin(const char* bleName);
-// Debug breadcrumb: which part of loop() is running. Printed by the
-// disconnect handler, so a freeze shows exactly where the loop is stuck.
-extern volatile const char* loopAt;
 void poll();       // call every loop (runs the BLE stack)
 char* readLine();  // complete incoming line or nullptr; valid until next call
 void out(const char* line);

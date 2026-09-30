@@ -26,6 +26,9 @@ const char* wakeReason();  // debug: why this boot happened
 // Restart the chip without the wake-up buzz (fresh Bluetooth after a disconnect).
 void quietRestart();
 bool quietBoot();  // this boot came from quietRestart()
+// Debug breadcrumb: which part of loop() is running, kept in backup RAM so
+// that after a watchdog restart the BOOT line says where the wand froze.
+void where(uint8_t step);
 [[noreturn]] void deepSleep();
 
 }  // namespace power

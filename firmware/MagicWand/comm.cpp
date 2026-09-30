@@ -10,7 +10,6 @@
 
 namespace comm {
 
-volatile const char* loopAt = "?";
 
 // Nordic UART Service — same UUIDs the web app looks for.
 static BLEService nus("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
@@ -113,7 +112,7 @@ static void resetLinkState() {
 }
 
 void poll() {
-  loopAt = "comm::poll start";
+  power::where(2);  // comm::poll start
   static bool wasSub = false;
   static uint32_t retryAt = 0;
   if (!bleOk) {  // a restart failed: try again every second
@@ -124,9 +123,9 @@ void poll() {
     dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED, retrying");
     return;
   }
-  loopAt = "inside BLE.poll()";
+  power::where(3);  // inside BLE.poll()
   BLE.poll();
-  loopAt = "comm::poll after BLE.poll";
+  power::where(4);  // comm::poll after BLE.poll
   if (evConnect) { evConnect = false; dbg("BLE: app connected"); }
   if (evDisconnect) {
     // Restarting just the Bluetooth stack (BLE.end() + BLE.begin()) hung the
@@ -194,7 +193,7 @@ char* readLine() {
 // buffers: writing into a link that just died is where the wand froze (the
 // motion stream was mid-send when the app disconnected).
 static void notify(const char* p, size_t n) {
-  loopAt = "notify(): sending to the app";
+  power::where(8);  // notify(): sending to the app
   while (n > 0) {
     if (!linkUp) return;
     size_t k = n < BLE_NOTIFY_CHUNK ? n : BLE_NOTIFY_CHUNK;

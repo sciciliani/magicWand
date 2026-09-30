@@ -18,9 +18,11 @@ namespace power {
 
 // Backup RAM (survives EM4) layout, 32-bit words.
 // Starts at word 8 in case the core keeps its own bookkeeping in the first words.
-enum : uint32_t { kMagicAddr = 8, kGxAddr = 9, kGyAddr = 10, kGzAddr = 11, kPollsAddr = 12, kSensAddr = 13, kQuietAddr = 14 };
+enum : uint32_t { kMagicAddr = 8, kGxAddr = 9, kGyAddr = 10, kGzAddr = 11, kPollsAddr = 12, kSensAddr = 13, kQuietAddr = 14, kWhereAddr = 15 };
 static const uint32_t kQuietMagic = 0x51554945;  // "QUIE"
 static bool quiet = false;
+static const char* const kWhere[] = {"?", "loop: before comm::poll", "comm::poll start", "inside BLE.poll()", "comm::poll after BLE.poll", "loop: readLine/handle", "loop: learn", "loop: sampling", "notify(): sending to the app", "loop: button", "loop: end (idle delay)"};
+void where(uint8_t step) { LowPower.deepSleepMemoryWrite(kWhereAddr, step); }
 static const uint32_t kMagic = 0x57414E44;  // "WAND"
 static bool woke = false;
 static char why[64] = "reset";  // why this boot happened (printed in the BOOT line)
@@ -41,7 +43,8 @@ void earlyBoot() {
   if (!LowPower.wokeUpFromDeepSleep() && WatchdogTimer.watchdogResetHappened()) {
     quiet = true;
     LowPower.deepSleepMemoryWrite(kQuietAddr, 0);
-    snprintf(why, sizeof(why), "WATCHDOG: the wand had frozen and restarted itself");
+    uint32_t w = LowPower.deepSleepMemoryRead(kWhereAddr);
+    snprintf(why, sizeof(why), "WATCHDOG: froze at %s", w < sizeof(kWhere) / sizeof(kWhere[0]) ? kWhere[w] : "?");
     return;
   }
   if (quiet) {
