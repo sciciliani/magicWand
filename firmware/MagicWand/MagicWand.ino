@@ -565,7 +565,7 @@ void setup() {
 #endif
   status::begin();
 
-  haptics::play(haptics::kWake);
+  if (!power::quietBoot()) haptics::play(haptics::kWake);  // no buzz after a Bluetooth restart
   lastMotionMs = millis();
   nextSampleUs = micros();
   comm::outf("BOOT %s %s wake=%d (%s)", name, FW_VERSION, power::wokeFromSleep(), power::wakeReason());

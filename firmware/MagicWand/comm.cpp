@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "power.h"
 
 namespace comm {
 
@@ -120,18 +121,12 @@ void poll() {
   BLE.poll();
   if (evConnect) { evConnect = false; dbg("BLE: app connected"); }
   if (evDisconnect) {
-    // onDisconnect() only raises the flag: it runs INSIDE BLE.poll(), and the
-    // stack can't be shut down from inside its own event handler. Right after
-    // BLE.poll() returns, restart it so the next connection gets a fresh stack
-    // (only the first connection after boot used to work).
-    resetLinkState();
-    wasSub = false;
-    BLE.end();
-    delay(50);
-    bleOk = startBle();
-    retryAt = millis() + 1000;
-    dbg(bleOk ? "BLE: advertising again" : "BLE: restart FAILED, retrying");
-    return;
+    // Restarting just the Bluetooth stack (BLE.end() + BLE.begin()) hung the
+    // wand on this board. Restart the whole chip instead (~2 s, no buzz): the
+    // next connection gets exactly the fresh state the first one after
+    // power-up had, with nothing left over from the old link.
+    dbg("BLE: restarting the wand for a fresh Bluetooth stack");
+    power::quietRestart();
   }
   bool sub = linkUp && txChar.subscribed();
   if (sub != wasSub) { wasSub = sub; dbg(sub ? "BLE: app listening (notifications on)" : "BLE: app stopped listening"); }

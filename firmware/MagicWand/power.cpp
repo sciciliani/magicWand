@@ -17,7 +17,9 @@ namespace power {
 
 // Backup RAM (survives EM4) layout, 32-bit words.
 // Starts at word 8 in case the core keeps its own bookkeeping in the first words.
-enum : uint32_t { kMagicAddr = 8, kGxAddr = 9, kGyAddr = 10, kGzAddr = 11, kPollsAddr = 12, kSensAddr = 13 };
+enum : uint32_t { kMagicAddr = 8, kGxAddr = 9, kGyAddr = 10, kGzAddr = 11, kPollsAddr = 12, kSensAddr = 13, kQuietAddr = 14 };
+static const uint32_t kQuietMagic = 0x51554945;  // "QUIE"
+static bool quiet = false;
 static const uint32_t kMagic = 0x57414E44;  // "WAND"
 static bool woke = false;
 static char why[64] = "reset";  // why this boot happened (printed in the BOOT line)
@@ -32,6 +34,12 @@ static void sleepAgain() {
 }
 
 void earlyBoot() {
+  quiet = LowPower.deepSleepMemoryRead(kQuietAddr) == kQuietMagic;
+  if (quiet) {
+    LowPower.deepSleepMemoryWrite(kQuietAddr, 0);
+    snprintf(why, sizeof(why), "bluetooth restart after disconnect");
+    return;  // a plain restart, not a wake-up from sleep
+  }
   woke = LowPower.wokeUpFromDeepSleep();
 #if WAKE_MODE == WAKE_POLL
   if (!woke) return;
@@ -94,6 +102,14 @@ void begin() {
 }
 
 bool wokeFromSleep() { return woke; }
+bool quietBoot() { return quiet; }
+
+void quietRestart() {
+  LowPower.deepSleepMemoryWrite(kQuietAddr, kQuietMagic);
+  Serial.flush();
+  delay(20);
+  systemReset();
+}
 const char* wakeReason() { return why; }
 
 float batteryVolts() {

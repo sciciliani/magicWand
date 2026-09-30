@@ -23,6 +23,9 @@ uint8_t batteryPercent();
 bool onCharger();       // needs HAS_DOCK_SENSE wiring, else always false
 bool wokeFromSleep();
 const char* wakeReason();  // debug: why this boot happened
+// Restart the chip without the wake-up buzz (fresh Bluetooth after a disconnect).
+void quietRestart();
+bool quietBoot();  // this boot came from quietRestart()
 [[noreturn]] void deepSleep();
 
 }  // namespace power
