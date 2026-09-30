@@ -113,7 +113,17 @@ document.addEventListener('visibilitychange', () => {
   else updateStream();
 });
 window.addEventListener('pagehide', stopStream);
-window.addEventListener('beforeunload', stopStream);
+// Closing or reloading while connected: send STREAM 0 and ask "Leave site?".
+// Chrome doesn't wait for Bluetooth writes once the page is going away; the
+// dialog keeps the page alive long enough for STREAM 0 to reach the wand.
+// (Chrome shows its own text; pages can't set the message.)
+window.addEventListener('beforeunload', (e) => {
+  if (!state.link) return;
+  stopStream();
+  e.preventDefault();
+  e.returnValue = '';
+  setTimeout(updateStream, 1000);  // only runs if the user chose to stay
+});
 
 function onClosed() {
   const name = state.info?.name || state.link?.name || 'the wand';
