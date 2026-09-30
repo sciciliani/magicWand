@@ -52,14 +52,7 @@ static void onDisconnect(BLEDevice) {
 static uint32_t lastAdvCheck = 0;
 
 void begin(const char* bleName) {
-#if USE_SERIAL
-  Serial.begin(115200);
-#endif
-  // Experiment: give the Bluetooth stack time to come up after reset before
-  // starting it. Only BOOT_TRACE builds (which pause 1.5 s at the top of
-  // setup) had a working Bluetooth link; this reproduces that pause without
-  // needing Serial. Costs nothing if setup already took longer.
-  while (millis() < BLE_START_DELAY_MS) delay(10);
+  // (Serial.begin() already ran at the top of setup().)
   if (!BLE.begin()) {
     out("ERR BLE.begin failed: select Tools > Protocol stack > BLE (Arduino)");
     return;
@@ -191,9 +184,7 @@ void end() {
     BLE.stopAdvertise();
     BLE.end();
   }
-#if USE_SERIAL
   Serial.end();  // an open Serial can stop the MG24 waking from EM4 (Seeed forum)
-#endif
 }
 
 }  // namespace comm

@@ -513,6 +513,15 @@ static void pollButton() {
 
 void setup() {
   power::earlyBoot();  // WAKE_POLL: may go straight back to sleep if not moved
+
+  // ALWAYS start the UART first and wait 1.5 s, on every boot and every
+  // wake-up, whatever USE_SERIAL / BOOT_TRACE say. This is exactly what the
+  // BOOT_TRACE build did, and it's the only start-up where the app
+  // (Bluetooth) worked; every build that skipped it had a dead app link.
+  // USE_SERIAL now only decides whether lines are printed to the monitor.
+  Serial.begin(115200);
+  delay(1500);
+
 #if BOOT_TRACE
   pinMode(PIN_USER_LED, OUTPUT);
   for (int i = 0; i < 3; i++) {
@@ -520,10 +529,6 @@ void setup() {
     digitalWrite(PIN_USER_LED, HIGH); delay(100);
   }
   digitalWrite(PIN_USER_LED, LOW);  // ON until setup() finishes
-#if USE_SERIAL
-  Serial.begin(115200);
-  delay(1500);  // time to open the Serial Monitor
-#endif
 #endif
   TRACE("setup started");
   power::begin();

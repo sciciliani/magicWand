@@ -94,10 +94,10 @@
 
 // ------------------------------------------------------------------ BLE
 #define BLE_NOTIFY_CHUNK 20      // bytes per notification (safe for MTU 23)
-#define BLE_START_DELAY_MS 1500  // don't start Bluetooth before this long after reset (see comm.cpp)
-// USB serial (debug). Set 0 for battery-only use: an open serial link to the
-// on-board USB chip can make BLE and deep sleep misbehave once USB is unplugged.
-#define USE_SERIAL 1
+// Print to / read from the USB Serial Monitor (1) or stay quiet (0).
+// The UART itself is ALWAYS started at boot (see setup() in MagicWand.ino):
+// the app's Bluetooth link only worked when it was.
+#define USE_SERIAL 0
 // Log Bluetooth events and every line the app sends to the Serial Monitor.
 #define BLE_DEBUG 1
 // Boot trace: blink + print each setup() step (adds ~2 s to each full boot).
