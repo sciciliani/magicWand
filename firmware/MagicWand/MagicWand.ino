@@ -566,9 +566,9 @@ void setup() {
 #endif
   status::begin();
 
-  // Watchdog: if the loop ever freezes for 4 s (e.g. stuck inside the Bluetooth
+  // Watchdog: if the loop ever freezes for 2 s (e.g. stuck inside the Bluetooth
   // library), the chip restarts itself quietly; the BOOT line then says WATCHDOG.
-  WatchdogTimer.begin(WDOG_PERIOD_4_S);
+  WatchdogTimer.begin(WDOG_PERIOD_2_S);
   if (!power::quietBoot()) haptics::play(haptics::kWake);  // no buzz after a Bluetooth restart
   lastMotionMs = millis();
   nextSampleUs = micros();
