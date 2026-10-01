@@ -25,6 +25,7 @@ const state = {
   info: null,
   recording: -1,
   learning: -1,
+  captured: {}, // slot -> 'code F2A0D5 · repeats 3 · 56 kHz' (codes learned this session)
   lib: null, // open library dialog: { slot, spell, learnSlot }
   lastDevice: null, // BLE device to offer for reconnect
   feats: [], // [right, up, twist, thrust]
@@ -171,7 +172,7 @@ function onLine(line) {
     case 'MATCH': onMatch(+p[0], +p[1], +p[2], p[3] === '1'); break;
     case 'CAST': onCast(+p[0], +p[1], p[2] === '1'); break;
     case 'REC': onRec(+p[0], p[1], p.slice(2)); break;
-    case 'LEARN': onLearn(+p[0], p[1], p[2]); break;
+    case 'LEARN': onLearn(+p[0], p[1], p[2], p[3], p[4], p[5]); break;
     case 'BAT':
       if (state.info) Object.assign(state.info, { bat: +p[0], volts: +p[1], chg: +p[2] });
       renderStatus();
@@ -184,6 +185,8 @@ function onLine(line) {
     case 'CODE': onCodeDump(p); break;
     case 'OK':
       if (['GNAME', 'GCLR', 'CODE', 'CNAME', 'CCLR', 'BIND', 'SET', 'RESET'].includes(p[0])) send('HELLO');
+      if (p[0] === 'CODE' || p[0] === 'CCLR') delete state.captured[+p[1]];  // slot replaced: old capture info is stale
+      if (p[0] === 'RESET') state.captured = {};
       if (p[0] === 'SEND' || p[0] === 'TRY') toast('IR sent. Did the device react?');
       if (p[0] === 'RESET') toast('Wand reset to factory settings');
       if (p[0] === 'SET' && p[1] === 'name') {
@@ -242,8 +245,9 @@ function onRec(g, what, rest) {
   }
 }
 
-// LEARN c count 3 / count 2 / count 1 / go / waiting / ok|timeout|unsupported
-function onLearn(c, what, n) {
+// LEARN c count 3 / count 2 / count 1 / go / waiting /
+//       ok <bits> <hex> <repeats> <khz> / timeout / unsupported
+function onLearn(c, what, n, hex, reps, khz) {
   if (what === 'count' || what === 'go' || what === 'waiting') {
     state.learning = c;
     state.learnMsg = what === 'count' ? `Get ready… ${n}` : what === 'go' ? 'GO! Press the remote button now' : '⏳ Listening: press the remote button now';
@@ -252,8 +256,10 @@ function onLearn(c, what, n) {
     libLearnState(what === 'count' ? `Aim your remote at the wand tip… ${n}` : `${state.learnMsg}`);
   } else {
     state.learning = -1;
-    libLearnState(what === 'ok' ? `✓ Learned (${n} bits). Test it, then save.` : '✗ Nothing usable received. Try again, closer.', what === 'ok' ? c : -1);
-    if (what === 'ok') toast(`Captured a ${n}-bit code ✓`);
+    const got = hex ? `code ${hex} · repeats ${reps} · ${khz} kHz` : `${n} bits`;
+    if (what === 'ok') state.captured[c] = got;
+    libLearnState(what === 'ok' ? `✓ Learned ${got}. Test it, then save.` : '✗ Nothing usable received. Try again, closer.', what === 'ok' ? c : -1);
+    if (what === 'ok') toast(`Captured ${got} ✓`);
     else if (what === 'unsupported') toast("Received something, but couldn't decode it. Try again, closer", true);
     else toast('Nothing received. Try closer, within 10 cm', true);
     send('HELLO');
@@ -362,7 +368,7 @@ function renderCodes() {
       <span class="idx">${i + 1}</span>
       <div>
         <input value="${esc(fromWire(c.n))}" placeholder="${c.k ? `Code ${i + 1}` : 'empty slot'}" maxlength="15" data-act="name" ${c.k && state.link ? '' : 'disabled'} />
-        <div class="meta">${state.learning === i ? esc(state.learnMsg || 'Get ready…') : c.k ? `${c.l} pulses · ${c.k} kHz` : '—'}</div>
+        <div class="meta">${state.learning === i ? esc(state.learnMsg || 'Get ready…') : c.k && state.captured[i] ? esc(state.captured[i]) : c.k ? `${c.l} pulses · ${c.k} kHz` : '—'}</div>
       </div>
       <div class="actions">
         <button class="small" data-act="learn" ${state.link && state.info?.irrx ? '' : 'disabled'}>Learn</button>

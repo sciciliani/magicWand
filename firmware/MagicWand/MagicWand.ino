@@ -652,7 +652,11 @@ void loop() {
     if (s == ir::kDone) {
       codes[modeTarget] = learnBuf;
       if (!storage::saveCode(modeTarget)) comm::out("ERR storage full or failed");
-      comm::outf("LEARN %d ok %u", modeTarget, learnBuf.nbits);
+      {
+        char h[IR_MAX_BYTES * 2 + 1];
+        ir::hex(learnBuf, h, sizeof(h));
+        comm::outf("LEARN %d ok %u %s %u %u", modeTarget, learnBuf.nbits, h, learnBuf.repeats, learnBuf.khz);
+      }
 #if IR_DEBUG
       printCodeShort(learnBuf);
 #else

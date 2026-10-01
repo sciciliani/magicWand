@@ -181,7 +181,7 @@ export class MockWand {
         setTimeout(() => {
           const d = Array.from({ length: 67 }, (_, k) => (k % 2 ? 560 + (k % 3) * 565 : 560));
           this.c[i] = { n: a2 || this.c[i].n || `code${i}`, k: 38, l: d.length, d };
-          this._line(`LEARN ${i} ok ${d.length}`);
+          this._line(`LEARN ${i} ok 32 20DF10EF 1 38`);
         }, 5300);
         break;
       case 'CODE': {
