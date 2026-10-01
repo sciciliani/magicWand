@@ -26,6 +26,13 @@
 // !! upload instead of running the sketch. An LED on D1 pulls it LOW: the
 // !! wand showed a solid yellow LED and never started. Keep D1 empty.
 #define PIN_IR_LED D6  // PC6 (Serial1 TX, unused; USB Serial is on other pins)
+// More IR power without extra parts: one pin gives the LED ~10 mA. Several
+// pins switched at the same instant share the load. List them here, join them
+// all together (D4-D5-D6 are side by side: one solder bridge; D0 by a short
+// wire) and lower the LED resistor: 4 pins + 33R = ~4-5x the light.
+// Only the free port-C pins D0, D4, D5, D6 (all switched in one register write).
+// Never list D1. With just D6 nothing changes.
+#define IR_LED_PINS {D6}  // e.g. {D0, D4, D5, D6}
 #define PIN_MOTOR D2
 #define PIN_IR_RECV D3
 // Receiver VCC on D7: the firmware powers it only while learning a code

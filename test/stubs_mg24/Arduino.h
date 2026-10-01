@@ -18,7 +18,7 @@
 #define INPUT_PULLUP 5
 #define LED_BUILTIN PA7
 enum PinName { PA0, PA3, PA5, PA7, PC0, PC1, PC2, PC3, PC6, PC7, PD3, PD4, PD5 };
-enum { D0 = PC0, D1 = PC1, D2 = PC2, D3 = PC3, D6 = PC6, D7 = PC7, D8 = PA3, D9 = PA0 + 100 };
+enum { D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10 };  // as the real variant: D6 = 6 (PC6)
 void pinMode(int, int); void digitalWrite(int, int); int digitalRead(int);
 uint32_t millis(); uint32_t micros(); void delay(uint32_t); void delayMicroseconds(uint32_t);
 void attachInterrupt(int, void (*)(), int); void detachInterrupt(int);

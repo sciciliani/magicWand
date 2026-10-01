@@ -37,6 +37,7 @@ struct IrCode {
 namespace ir {
 
 void begin();
+void ledOff();                   // all IR LED pins low
 void send(const IrCode& code);   // blocking; the frame x repeats, as the remote sent it
 const char* timingInfo();        // IR timing method (for the BOOT line)
 

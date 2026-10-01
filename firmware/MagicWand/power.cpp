@@ -158,7 +158,7 @@ void deepSleep() {
   haptics::off();
   status::off();
   ir::stopLearn();
-  digitalWrite(PIN_IR_LED, LOW);
+  ir::ledOff();
   digitalWrite(PIN_USER_LED, HIGH);
   comm::end();  // stops BLE and Serial (Serial left open can block EM4 wake-up)
 

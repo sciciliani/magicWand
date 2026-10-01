@@ -1,6 +1,7 @@
 #include "ir.h"
 
 #include <Arduino.h>
+#include <em_gpio.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -52,9 +53,32 @@ static void initCycleCounter() {
   cyclesPerUs = cycOk ? expect : 0;
 }
 
+// The IR LED can be driven by several port-C pins at once (IR_LED_PINS): one
+// register write switches them all in the same instant, so they share the load.
+#ifndef IR_LED_PINS
+#define IR_LED_PINS {PIN_IR_LED}
+#endif
+static const uint8_t kLedPins[] = IR_LED_PINS;
+static uint32_t ledMask = 0;  // port C bits
+
+static void ledPinsOutput() {
+  for (uint8_t p : kLedPins) {
+    if (p == D1) continue;  // never: LOW on D1 at reset = upload-recovery loop
+    pinMode(p, OUTPUT);
+  }
+}
+
+static inline void ledOn() { GPIO_PortOutSet(gpioPortC, ledMask); }
+void ledOff() { GPIO_PortOutClear(gpioPortC, ledMask); }
+
 void begin() {
-  pinMode(PIN_IR_LED, OUTPUT);
-  digitalWrite(PIN_IR_LED, LOW);
+  ledMask = 0;
+  for (uint8_t p : kLedPins) {
+    // XIAO MG24: D0 = PC0 ... D7 = PC7 (variant pin table)
+    if (p != D1 && p <= D7) ledMask |= 1u << p;
+  }
+  ledOff();
+  ledPinsOutput();
 #if HAS_IR_RECEIVER
 #ifdef PIN_IR_RECV_PWR
   pinMode(PIN_IR_RECV_PWR, OUTPUT);
@@ -79,9 +103,9 @@ static void markDelay(uint32_t us, uint16_t khz) {
   if (offUs > 2) offUs -= 2;                       // digitalWrite overhead
   uint32_t n = us / periodUs;
   for (uint32_t i = 0; i < n; i++) {
-    digitalWrite(PIN_IR_LED, HIGH);
+    ledOn();
     delayMicroseconds(onUs);
-    digitalWrite(PIN_IR_LED, LOW);
+    ledOff();
     delayMicroseconds(offUs);
   }
 }
@@ -127,7 +151,7 @@ static void transmit(const IrCode& f) {
       if (isMark) markDelay(us, f.khz);
       else delayMicroseconds(us);
     });
-    digitalWrite(PIN_IR_LED, LOW);
+    ledOff();
     return;
   }
   const uint32_t period = cyclesPerUs * 1000 / f.khz;
@@ -141,16 +165,16 @@ static void transmit(const IrCode& f) {
     uint32_t end = at + us * cyclesPerUs;
     if (isMark) {
       for (uint32_t t = at; t + period <= end; t += period) {
-        digitalWrite(PIN_IR_LED, HIGH);
+        ledOn();
         waitUntil(t0, t + onCycles);
-        digitalWrite(PIN_IR_LED, LOW);
+        ledOff();
         waitUntil(t0, t + period);
       }
     }
     waitUntil(t0, end);
     at = end;
   });
-  digitalWrite(PIN_IR_LED, LOW);
+  ledOff();
 #if IR_SEND_IRQ_OFF
   interrupts();
 #endif
@@ -166,6 +190,7 @@ static void pauseUs(uint32_t us) {
 // Send the frame as many times as the remote did (the "x2" IrDump prints).
 void send(const IrCode& code) {
   if (code.khz < 20 || code.khz > 60 || code.nbits == 0) return;
+  ledPinsOutput();  // in case a library re-purposed one of them (D4/D5 = I2C pins)
   int reps = code.repeats < 1 ? 1 : (code.repeats > IR_MAX_REPEATS ? IR_MAX_REPEATS : code.repeats);
   IrCode frame = code;
   frame.repeats = 1;
@@ -173,7 +198,7 @@ void send(const IrCode& code) {
     if (r > 0) pauseUs(code.gap ? code.gap : 40000);
     transmit(frame);
   }
-  digitalWrite(PIN_IR_LED, LOW);
+  ledOff();
 }
 
 int rawLength(const IrCode& c) {

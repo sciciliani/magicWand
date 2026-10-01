@@ -17,6 +17,8 @@ void delayMicroseconds(uint32_t) {}
 void attachInterrupt(int, void (*)(), int) {}
 void detachInterrupt(int) {}
 void noInterrupts() {}
+void GPIO_PortOutSet(GPIO_Port_TypeDef, uint32_t) {}
+void GPIO_PortOutClear(GPIO_Port_TypeDef, uint32_t) {}
 void interrupts() {}
 static DWT_Type dwt; DWT_Type* DWT = &dwt;
 static DCB_Type dcb; DCB_Type* DCB = &dcb;

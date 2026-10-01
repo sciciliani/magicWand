@@ -71,7 +71,7 @@ Everything connects straight to the XIAO: no transistors, no MOSFETs.
 
 | XIAO pin | Goes to | Why |
 |---|---|---|
-| **D6** | IR LED long leg (a 100–200 Ω resistor in series is strongly recommended) | Sends IR codes |
+| **D6** | IR LED long leg (a 100–200 Ω resistor in series is strongly recommended) | Sends IR codes. More range: bridge **D4–D5–D6** together, add **D0** with a short wire, use a **33 Ω** resistor and set `IR_LED_PINS {D0, D4, D5, D6}` in config.h (4 pins share the load, ~4–5× the light) |
 | **D2** | Vibration motor red wire | Buzzes |
 | **D3** | IR receiver OUT | Reads a remote when learning |
 | **D7** | IR receiver VCC | Powered only while learning a code: clean supply (the motor is never on at the same time) and nothing drawn while the wand sleeps |
@@ -79,7 +79,7 @@ Everything connects straight to the XIAO: no transistors, no MOSFETs.
 | **GND** | IR LED short leg, motor black wire, receiver GND, button | Common ground |
 | **BAT+ / BAT−** | LiPo | Battery. Charges through the XIAO's USB-C port |
 | **D1** | **Nothing** | See below |
-| **D0, D4, D5, D8, D10** | Free | |
+| **D0, D4, D5, D8, D10** | Free (D0, D4, D5 can join D6 to drive the IR LED harder) | |
 
 **About D1:** the MG24 checks D1 at reset, and if it reads LOW it waits for an upload instead of
 running: solid yellow LED, no Bluetooth. Anything wired to D1 (an LED included) can pull it LOW.
