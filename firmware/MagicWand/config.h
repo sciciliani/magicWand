@@ -13,19 +13,19 @@
 // ------------------------------------------------------------------ pins
 // Everything is wired straight to the XIAO (no transistors):
 //
-//   IR LED       D0 -> LED long leg; short leg -> GND
+//   IR LED       D6 -> LED long leg; short leg -> GND
 //                (a 100-200R resistor in series is strongly recommended; without
 //                one, IR_DUTY_PERCENT keeps the pin's average current down)
 //   Vibration    D2 -> motor; other wire -> GND
 //   IR receiver  VS1838B OUT -> D3, VCC -> D7, GND -> GND
 //   Button       D9 -> microswitch -> GND
-//   Free         D4, D5, D6, D8, D10
+//   Free         D0, D4, D5, D8, D10
 //   D1           must stay FREE (see below)
 //
 // !! D1 (PC01): if it reads LOW at reset the MG24 bootloader waits for an
 // !! upload instead of running the sketch. An LED on D1 pulls it LOW: the
 // !! wand showed a solid yellow LED and never started. Keep D1 empty.
-#define PIN_IR_LED D0
+#define PIN_IR_LED D6  // PC6 (Serial1 TX, unused; USB Serial is on other pins)
 #define PIN_MOTOR D2
 #define PIN_IR_RECV D3
 // Receiver VCC on D7: the firmware powers it only while learning a code
