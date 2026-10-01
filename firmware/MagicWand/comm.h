@@ -25,6 +25,7 @@ void poll();       // call every loop (runs the BLE stack)
 char* readLine();  // complete incoming line or nullptr; valid until next call
 void out(const char* line);
 void outf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+void serialOut(const char* line);  // USB Serial only (debug dumps), never to the app
 bool bleConnected();
 bool bleNotifying();
 void end();        // before deep sleep

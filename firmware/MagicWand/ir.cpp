@@ -380,11 +380,30 @@ static uint16_t carrierFor(const IrCode& c) {
   return IR_CARRIER_KHZ;
 }
 
+static bool near(uint16_t v, uint16_t want) { return v > want * 8 / 10 && v < want * 12 / 10; }
+
+const char* protocolName(const IrCode& c) {
+  if (!c.nbits) return "empty";
+  if (c.pw) return near(c.hdrMark, 2400) ? "Sony" : "pulse-width";
+  if (isNec(c)) return "NEC";
+  if (c.nbits == 24 && carrierFor(c) == 56) return "RCA";
+  if (c.nbits == 32 && near(c.hdrMark, 4500) && near(c.hdrSpace, 4500)) return "Samsung";
+  if (c.nbits == 48 && near(c.hdrMark, 4600) && near(c.hdrSpace, 4600)) return "Coolix";
+  if (c.nbits == 48 && near(c.hdrMark, 3456) && near(c.hdrSpace, 1728)) return "Panasonic";
+  return c.hdrMark ? "pulse-distance" : "pulse-distance, no header";
+}
+
 static volatile uint32_t edges[IR_CAPTURE_EDGES];
 static volatile int nEdges = 0;
 static LearnState state = kIdle;
 static uint32_t learnStart = 0;
 static uint16_t raw[IR_CAPTURE_EDGES];
+static int rawN = 0;  // durations in raw[] from the last capture
+
+int lastCapture(const uint16_t** d) {
+  *d = raw;
+  return rawN;
+}
 
 // Edge time: cycle counter if it works (exact), else micros() (30 us steps).
 static inline uint32_t stamp() { return cycOk ? DWT->CYCCNT : micros(); }
@@ -413,6 +432,7 @@ void startLearn() {
 #endif
   holdAwake(true);
   nEdges = 0;
+  rawN = 0;
   attachInterrupt(digitalPinToInterrupt(PIN_IR_RECV), onEdge, CHANGE);
   state = kWaiting;
   learnStart = millis();
@@ -448,6 +468,7 @@ LearnState pollLearn(IrCode& out) {
     if (n >= IR_CAPTURE_EDGES || stamp() - last > (uint32_t)IR_END_GAP_US * ticksPerUs()) {
       stopLearn();
       int nd = n - 1;
+      rawN = nd > 0 ? nd : 0;
       for (int i = 0; i < nd; i++) {
         int32_t d = (int32_t)((edges[i + 1] - edges[i]) / ticksPerUs());
         d += (i % 2 == 0) ? -IR_MARK_EXCESS_US : IR_MARK_EXCESS_US;  // receiver stretches marks

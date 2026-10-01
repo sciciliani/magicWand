@@ -23,6 +23,7 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `CODE <c> <khz> <name\|-> <d1,d2,…>` | Upload a raw code: µs durations, mark first. Decoded on arrival | `OK CODE c <durations>` + `IRCODE …`, or `ERR CODE can't decode` |
 | `HEX <c> <nec\|samsung\|coolix\|sony\|rca> <name> <hex> [repeats]` | Store a code from its hex value (as IrDump prints it) and a protocol's timings | `OK CODE c <durations>` + `IRCODE …` |
 | `DUMPC <c>` | Read a code back (backup) | `CODE c khz name d1,d2,…` + `IRCODE …` |
+| `IRDUMP` | Print the last LEARN capture exactly as received, to the USB Serial Monitor only (also printed after every LEARN when `IR_DEBUG` is 1) | `IRDUMP …` lines: mark/space pairs in µs, one line per frame or 8 pairs |
 | `CNAME <c> <name>` | Rename code | `OK CNAME c` |
 | `CCLR <c>` | Delete code (and unbind it) | `OK CCLR c` |
 | `SEND <c>` | Fire a code now | `OK SEND c` |
@@ -51,7 +52,7 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `CAST <g> <c> <fired>` | A spell was recognized; `fired` = 0 while charging or if unbound |
 | `BAT <pct> <volts> <charging>` | Every 30 s while connected |
 | `SLEEP <why>` | About to enter deep sleep (BLE drops) |
-| `IRCODE <c> <name> <bits> bits x<repeats> <hex> (timings)` | Human-readable summary of a stored code |
+| `IRCODE <c> <name> <bits> bits x<repeats> <hex> (protocol, timings)` | Human-readable summary of a stored code |
 | `ERR <text>` | Something went wrong |
 
 ## INFO json
@@ -73,7 +74,7 @@ the data bits as hex (in the order they're sent) and how many times the frame re
 gap between repeats. Example, a Midea/Coolix AC at 20°C:
 
 ```
-IRCODE 0 AC_20 48 bits x2 B24D1FE048B7  (hdr 4692/4692 bit 552 one 1656 zero 552 gap 5244 pulse-distance 38kHz)
+IRCODE 0 AC_20 48 bits x2 B24D1FE048B7  (Coolix, hdr 4692/4692 bit 552 one 1656 zero 552 gap 5244 pulse-distance 38kHz)
 ```
 
 Learning keeps the first frame with at least 8 bits plus its identical repeats (up to 4). A

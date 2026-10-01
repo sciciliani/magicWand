@@ -56,4 +56,10 @@ void startLearn();
 LearnState pollLearn(IrCode& out);  // fills `out` (keeps its name) when kDone
 void stopLearn();                   // also powers the receiver down
 
+// Debug: the last capture exactly as received (µs, mark first; marks already
+// shortened by IR_MARK_EXCESS_US). Kept until the next LEARN. Returns count.
+int lastCapture(const uint16_t** d);
+// Debug: protocol name guessed from a code's timings ("RCA", "NEC", ...).
+const char* protocolName(const IrCode& c);
+
 }  // namespace ir

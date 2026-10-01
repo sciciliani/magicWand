@@ -291,6 +291,17 @@ void out(const char* line) {
   }
 }
 
+void serialOut(const char* line) {
+#if USE_SERIAL
+  if (Serial) {
+    Serial.print(line);
+    Serial.print('\n');
+  }
+#else
+  (void)line;
+#endif
+}
+
 void outf(const char* fmt, ...) {
   char buf[512];
   va_list ap;

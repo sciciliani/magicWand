@@ -98,6 +98,9 @@
 // remote does on a normal press. One bare frame (~70 ms) is easy to miss.
 // NEC/LG TVs get "still held" repeat bursts, so this is not a double press.
 #define IR_HOLD_MS 300
+// After every LEARN, print the raw capture to the Serial Monitor (IRDUMP
+// lines: mark/space pairs in µs). The IRDUMP command prints it again.
+#define IR_DEBUG 1
 
 // ------------------------------------------------------------------ BLE
 #define BLE_NOTIFY_CHUNK 20      // bytes per notification (safe for MTU 23)
