@@ -37,7 +37,7 @@ struct IrCode {
 namespace ir {
 
 void begin();
-void send(const IrCode& code);   // blocking; at least IR_HOLD_MS (like a held button)
+void send(const IrCode& code);   // blocking; the frame x repeats, as the remote sent it
 const char* timingInfo();        // IR timing method (for the BOOT line)
 
 // Raw pulses (µs: mark, space, mark, ...) <-> decoded code.
@@ -49,14 +49,14 @@ bool fromHex(const char* hex, IrCode& c);                          // sets data 
 // Protocol presets for the HEX command: nec, samsung, coolix, sony, rca
 bool setProtocol(const char* name, IrCode& c);
 
-// Learning (non-blocking). startLearn() powers the receiver and waits for a
-// button press; poll pollLearn() from loop().
+// Learning (non-blocking), the IrDump way: receiverOn() early so it settles,
+// startLearn() listens, pollLearn() from loop() returns kDone once the remote
+// has been silent for IR_END_GAP_US.
 enum LearnState { kIdle, kWaiting, kCapturing, kDone, kTimeout, kUnsupported };
+void receiverOn();
 void startLearn();
 LearnState pollLearn(IrCode& out);  // fills `out` (keeps its name) when kDone
 void stopLearn();                   // also powers the receiver down
 
-// Debug: protocol name guessed from a code's timings ("RCA", "NEC", ...).
-const char* protocolName(const IrCode& c);
 
 }  // namespace ir

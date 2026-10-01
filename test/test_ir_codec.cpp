@@ -94,6 +94,20 @@ int main(int argc, char** argv) {
   for (int i = 0; i < 40; i++) raw[i] = 600;
   check(!ir::decode(raw, 40, 38, b), "same-length pulses rejected");
 
+  {  // Press caught half-way (Santiago's AC "off"): short first frame, then a full one.
+    IrCode ac = {}, got = {};
+    ir::setProtocol("coolix", ac); ir::fromHex("B24D7B84E01F", ac); ac.khz = 38;  // 2 frames
+    static uint16_t ar[300];
+    int an = ir::toRaw(ac, ar, 300);
+    int skip = 2 + 28 * 2;  // header + the first 28 bits missed
+    char ah[32];
+    bool aok = ir::decode(ar + skip, an - skip, 38, got);
+    ir::hex(got, ah, sizeof(ah));
+    check(aok && !strcmp(ah, "B24D7B84E01F") && got.nbits == 48, "late start: keeps the complete frame B24D7B84E01F, not 4E01F");
+    bool fok = ir::decode(ar, an, 38, got);
+    ir::hex(got, ah, sizeof(ah));
+    check(fok && !strcmp(ah, "B24D7B84E01F") && got.repeats == 2, "full capture: B24D7B84E01F x2 (as IrDump)");
+  }
   {  // RCA (the TV remote's codes): learned -> 56 kHz, HEX rca -> same timing
     IrCode r = {}, back = {};
     check(ir::setProtocol("rca", r) && ir::fromHex("F2A0D5", r) && r.khz == 56, "HEX rca F2A0D5 -> 56 kHz");

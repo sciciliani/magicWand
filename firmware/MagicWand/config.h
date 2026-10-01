@@ -85,21 +85,17 @@
 // ------------------------------------------------------------------ IR
 #define IR_CARRIER_KHZ 38
 #define IR_DUTY_PERCENT 33   // LED on-time per carrier cycle (33% = gentler on a resistor-less LED)
-#define IR_CAPTURE_EDGES 500   // learning buffer; a held button's extra repeats are ignored
+#define IR_CAPTURE_EDGES 1000  // learning buffer; a held button's extra repeats are ignored
 #define IR_RAW_MAX 600         // longest raw list accepted by the CODE command
 #define IR_MAX_CODES 12
 #define IR_LEARN_TIMEOUT_MS 10000
-#define IR_END_GAP_US 120000
+#define IR_END_GAP_US 200000   // capture ends after this much silence (as IrDump)
 #define IR_MARK_EXCESS_US 50
 // Send each IR frame with interrupts off, so nothing (Bluetooth) can stretch
 // a pulse. Set 0 if the Bluetooth link drops while sending (less exact codes).
 #define IR_SEND_IRQ_OFF 1
-// Each send keeps transmitting like a button held this long (ms), as a real
-// remote does on a normal press. One bare frame (~70 ms) is easy to miss.
-// NEC/LG TVs get "still held" repeat bursts, so this is not a double press.
-#define IR_HOLD_MS 300
-// After every LEARN, print one short line to the Serial Monitor:
-// "IRDUMP code F2A0D5  repeats 3  56 kHz". IRDUMP [slot] prints it again.
+// After every LEARN, print the code to the Serial Monitor the way IrDump does:
+// "IRDUMP 0xB24D7B84E01F x2 38kHz". IRDUMP [slot] prints it again.
 #define IR_DEBUG 1
 
 // ------------------------------------------------------------------ BLE

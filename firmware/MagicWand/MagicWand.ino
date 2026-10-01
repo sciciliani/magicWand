@@ -109,16 +109,17 @@ static void describeCode(int c) {
   const IrCode& k = codes[c];
   char h[IR_MAX_BYTES * 2 + 1];
   ir::hex(k, h, sizeof(h));
-  comm::outf("IRCODE %d %s %u bits x%u %s  (%s, hdr %u/%u bit %u one %u zero %u gap %u %s %ukHz)", c,
-             k.name[0] ? k.name : "-", k.nbits, k.repeats, h, ir::protocolName(k), k.hdrMark, k.hdrSpace,
-             k.bitMark, k.one, k.zero, k.gap, k.pw ? "pulse-width" : "pulse-distance", k.khz);
+  comm::outf("IRCODE %d %s %u bits x%u %s  (hdr %u/%u bit %u one %u zero %u gap %u %s %ukHz)", c,
+             k.name[0] ? k.name : "-", k.nbits, k.repeats, h, k.hdrMark, k.hdrSpace, k.bitMark, k.one,
+             k.zero, k.gap, k.pw ? "pulse-width" : "pulse-distance", k.khz);
 }
 
-// Serial only: just the code, how many times it repeats, and the carrier.
+// Serial only, in IrDump's format: "IRDUMP 0xB24D7B84E01F x2 38kHz".
 static void printCodeShort(const IrCode& k) {
   char h[IR_MAX_BYTES * 2 + 1], line[100];
   ir::hex(k, h, sizeof(h));
-  snprintf(line, sizeof(line), "IRDUMP code %s  repeats %u  %u kHz", k.nbits ? h : "(none)", k.repeats, k.khz);
+  if (!k.nbits) snprintf(line, sizeof(line), "IRDUMP (no code)");
+  else snprintf(line, sizeof(line), "IRDUMP 0x%s x%u %ukHz", h, k.repeats, k.khz);
   comm::serialOut(line);
 }
 
@@ -196,6 +197,7 @@ static void handle(char* line) {
     // same time (motor noise on the supply = garbage edges).
     ir::stopLearn();
     haptics::off();
+    ir::receiverOn();  // on now, so it has settled by "go" (IrDump keeps it on)
     mode = kLearning;
     modeTarget = i1;
     learnStep = 3;
@@ -637,8 +639,8 @@ void loop() {
         learnStep--;
       } else if (learnStep == 0) {
         comm::outf("LEARN %d go", modeTarget);
-        haptics::pulse(250);
-        learnNextMs = now + 300;  // buzz + 50 ms for the supply to settle
+        haptics::pulse(150);
+        learnNextMs = now + 160;  // listen as soon as the buzz ends
         learnStep = -1;
       } else if (!haptics::busy()) {
         haptics::off();

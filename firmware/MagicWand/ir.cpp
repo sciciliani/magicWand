@@ -26,9 +26,6 @@
 #ifndef IR_SEND_IRQ_OFF
 #define IR_SEND_IRQ_OFF 1
 #endif
-#ifndef IR_HOLD_MS
-#define IR_HOLD_MS 300
-#endif
 
 namespace ir {
 
@@ -166,47 +163,15 @@ static void pauseUs(uint32_t us) {
   waitUntil(t0, us * cyclesPerUs);
 }
 
-// NEC / LG: 9 ms + 4.5 ms header, 32 bits. A held NEC remote sends the frame
-// once, then short "repeat" bursts (9 ms, 2.25 ms, 560 us) every 108 ms.
-static bool isNec(const IrCode& c) {
-  return !c.pw && c.nbits == 32 && c.hdrMark > 8000 && c.hdrMark < 10000 && c.hdrSpace > 3500 && c.hdrSpace < 5500;
-}
-
+// Send the frame as many times as the remote did (the "x2" IrDump prints).
 void send(const IrCode& code) {
   if (code.khz < 20 || code.khz > 60 || code.nbits == 0) return;
   int reps = code.repeats < 1 ? 1 : (code.repeats > IR_MAX_REPEATS ? IR_MAX_REPEATS : code.repeats);
-  IrCode frame = code;  // one frame at a time; the gap between them is ours
+  IrCode frame = code;
   frame.repeats = 1;
-  uint32_t gap = code.gap ? code.gap : 40000;
-
-  uint32_t start = millis();
   for (int r = 0; r < reps; r++) {
-    if (r > 0) pauseUs(gap);
+    if (r > 0) pauseUs(code.gap ? code.gap : 40000);
     transmit(frame);
-  }
-
-  // Then keep going like a button held for IR_HOLD_MS: what a real remote
-  // does on a normal press, and much easier to see/receive than one frame.
-  // NEC gets repeat bursts (a TV reads them as "still held", not as new
-  // presses); other protocols repeat the whole frame, as their remotes do.
-  if (isNec(code)) {
-    IrCode burst = {};
-    burst.khz = code.khz;
-    burst.hdrMark = code.hdrMark;
-    burst.hdrSpace = code.hdrSpace / 2;  // 2.25 ms
-    burst.bitMark = code.bitMark;        // nbits 0: header + stop mark only
-    burst.repeats = 1;
-    uint32_t wait = gap;                 // after the full frame: ~40 ms
-    while (millis() - start < IR_HOLD_MS) {
-      pauseUs(wait);
-      transmit(burst);
-      wait = 96000;                      // bursts every 108 ms (start to start)
-    }
-  } else {
-    while (millis() - start < IR_HOLD_MS) {
-      pauseUs(gap);
-      transmit(frame);
-    }
   }
   digitalWrite(PIN_IR_LED, LOW);
 }
@@ -326,8 +291,11 @@ static bool sameBits(const IrCode& a, const IrCode& b) {
          memcmp(a.data, b.data, (a.nbits + 7) / 8) == 0;
 }
 
+// Same as IrDump: split into frames at long spaces (> 5 ms) or at a new
+// header mark (> 2 ms) and decode each one. Keep the most complete frame
+// (most bits: a press caught half-way gives a short first frame) and count
+// how many times it was received: IrDump's "0xB24D7B84E01F x2".
 bool decode(const uint16_t* d, int n, uint16_t khz, IrCode& out) {
-  // Split into frames at long spaces (> 5 ms) or at a new header mark (> 2 ms).
   static IrCode f;
   bool have = false;
   int start = 0;
@@ -338,23 +306,17 @@ bool decode(const uint16_t* d, int n, uint16_t khz, IrCode& out) {
     bool gap = i < n && (i % 2 == 1) && d[i] > 5000;
     bool hdr = i < n && (i % 2 == 0) && i > start && d[i] > 2000;
     if (!(i == n || gap || hdr)) continue;
-    int end = hdr ? i - 1 : i;             // frames always end on a mark
-    if (end - start >= 3) {
-      memset(&f, 0, sizeof(f));
-      if (decodeFrame(d, start, end, f)) {
-        if (!have && f.nbits >= 8) {
-          out = f;
-          out.repeats = 1;
-          out.gap = 0;
-          have = true;
-        } else if (have && sameBits(out, f) && out.repeats < IR_MAX_REPEATS) {
-          if (out.repeats == 1) out.gap = gapBefore;
-          out.repeats++;
-        } else if (have) {
-          break;                           // different frame: stop here
-        }
-      } else if (have) {
-        break;                             // e.g. an NEC "repeat" burst
+    int end = hdr ? i - 1 : i;  // frames always end on a mark
+    memset(&f, 0, sizeof(f));
+    if (end - start >= 3 && decodeFrame(d, start, end, f) && f.nbits >= 8) {
+      if (!have || f.nbits > out.nbits) {  // first, or more complete than what we had
+        out = f;
+        out.repeats = 1;
+        out.gap = 0;
+        have = true;
+      } else if (sameBits(out, f) && out.repeats < IR_MAX_REPEATS) {
+        if (out.repeats == 1) out.gap = gapBefore;
+        out.repeats++;
       }
     }
     if (gap) { gapBefore = d[i]; start = i + 1; }
@@ -378,19 +340,6 @@ static uint16_t carrierFor(const IrCode& c) {
   }
   if (c.pw && c.hdrMark > 1900 && c.hdrMark < 2900) return 40;
   return IR_CARRIER_KHZ;
-}
-
-static bool near(uint16_t v, uint16_t want) { return v > want * 8 / 10 && v < want * 12 / 10; }
-
-const char* protocolName(const IrCode& c) {
-  if (!c.nbits) return "empty";
-  if (c.pw) return near(c.hdrMark, 2400) ? "Sony" : "pulse-width";
-  if (isNec(c)) return "NEC";
-  if (c.nbits == 24 && carrierFor(c) == 56) return "RCA";
-  if (c.nbits == 32 && near(c.hdrMark, 4500) && near(c.hdrSpace, 4500)) return "Samsung";
-  if (c.nbits == 48 && near(c.hdrMark, 4600) && near(c.hdrSpace, 4600)) return "Coolix";
-  if (c.nbits == 48 && near(c.hdrMark, 3456) && near(c.hdrSpace, 1728)) return "Panasonic";
-  return c.hdrMark ? "pulse-distance" : "pulse-distance, no header";
 }
 
 static volatile uint32_t edges[IR_CAPTURE_EDGES];
@@ -418,11 +367,24 @@ static void holdAwake(bool on) {
   holdingEm1 = on;
 }
 
+// Power the receiver ahead of time (at the start of the countdown) so it is
+// settled when capture starts, like IrDump where it is always on.
+static bool rxPowered = false;
+
+void receiverOn() {
+#if HAS_IR_RECEIVER && defined(PIN_IR_RECV_PWR)
+  digitalWrite(PIN_IR_RECV_PWR, HIGH);
+#endif
+  rxPowered = true;
+}
+
 void startLearn() {
 #if HAS_IR_RECEIVER
 #ifdef PIN_IR_RECV_PWR
-  digitalWrite(PIN_IR_RECV_PWR, HIGH);
-  delay(50);  // receiver settling after power-up
+  if (!rxPowered) {
+    receiverOn();
+    delay(50);  // receiver settling after power-up
+  }
 #endif
   holdAwake(true);
   nEdges = 0;
@@ -441,6 +403,7 @@ void stopLearn() {
   digitalWrite(PIN_IR_RECV_PWR, LOW);
 #endif
 #endif
+  rxPowered = false;
   holdAwake(false);
   if (state == kWaiting || state == kCapturing) state = kIdle;
 }

@@ -25,7 +25,7 @@ const state = {
   info: null,
   recording: -1,
   learning: -1,
-  captured: {}, // slot -> 'code F2A0D5 · repeats 3 · 56 kHz' (codes learned this session)
+  captured: {}, // slot -> '0xF2A0D5 x3 · 56 kHz' (codes learned this session, as IrDump prints them)
   lib: null, // open library dialog: { slot, spell, learnSlot }
   lastDevice: null, // BLE device to offer for reconnect
   feats: [], // [right, up, twist, thrust]
@@ -256,7 +256,7 @@ function onLearn(c, what, n, hex, reps, khz) {
     libLearnState(what === 'count' ? `Aim your remote at the wand tip… ${n}` : `${state.learnMsg}`);
   } else {
     state.learning = -1;
-    const got = hex ? `code ${hex} · repeats ${reps} · ${khz} kHz` : `${n} bits`;
+    const got = hex ? `0x${hex} x${reps} · ${khz} kHz` : `${n} bits`;
     if (what === 'ok') state.captured[c] = got;
     libLearnState(what === 'ok' ? `✓ Learned ${got}. Test it, then save.` : '✗ Nothing usable received. Try again, closer.', what === 'ok' ? c : -1);
     if (what === 'ok') toast(`Captured ${got} ✓`);
