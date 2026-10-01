@@ -12,7 +12,20 @@
 // If the counter doesn't work, sending falls back to delayMicroseconds()
 // timing, which is less exact but can't hang.
 //
-// Each send also has a hard time limit (1.5 s).
+// Why not micros(): on this core it comes from the 32 kHz sleep timer, so it
+// moves in 30.5 us steps. And every space between marks used to run with
+// interrupts on, so the Bluetooth stack could cut in and stretch a "0" into
+// a "1". Now each frame is sent with interrupts off and every edge is placed
+// at an absolute cycle-counter time from the start of the frame. Interrupts
+// come back between repeated frames (Bluetooth just misses a few connection
+// events, ~100 ms at most; the link survives that).
+//
+// Learning timestamps edges with the cycle counter too, and keeps the chip
+// out of deep sleep (EM2) while it listens: in EM2 the counter stops.
+
+#ifndef IR_SEND_IRQ_OFF
+#define IR_SEND_IRQ_OFF 1
+#endif
 
 namespace ir {
 
@@ -59,25 +72,6 @@ const char* timingInfo() {
   return buf;
 }
 
-// One mark (carrier burst) of `us` microseconds.
-static void markCycles(uint32_t us, uint32_t period, uint32_t onCycles) {
-  uint32_t total = us * cyclesPerUs;
-  noInterrupts();
-  uint32_t t0 = DWT->CYCCNT;
-  uint32_t t = 0;
-  while (t + period <= total) {
-    digitalWrite(PIN_IR_LED, HIGH);
-    while ((uint32_t)(DWT->CYCCNT - t0) < t + onCycles) {
-    }
-    digitalWrite(PIN_IR_LED, LOW);
-    t += period;
-    while ((uint32_t)(DWT->CYCCNT - t0) < t) {
-    }
-  }
-  digitalWrite(PIN_IR_LED, LOW);
-  interrupts();
-}
-
 static void markDelay(uint32_t us, uint16_t khz) {
   uint32_t periodUs = 1000 / khz;                  // 26 µs at 38 kHz
   uint32_t onUs = periodUs * IR_DUTY_PERCENT / 100;
@@ -92,9 +86,8 @@ static void markDelay(uint32_t us, uint16_t khz) {
   }
 }
 
-static void space(uint32_t us) {
-  uint32_t t0 = micros();
-  while (micros() - t0 < us) {
+static inline void waitUntil(uint32_t t0, uint32_t at) {
+  while ((uint32_t)(DWT->CYCCNT - t0) < at) {
   }
 }
 
@@ -129,14 +122,52 @@ static int walk(const IrCode& c, F emit) {
 
 void send(const IrCode& code) {
   if (code.khz < 20 || code.khz > 60 || code.nbits == 0) return;
-  uint32_t period = cycOk ? cyclesPerUs * 1000 / code.khz : 0;
-  uint32_t onCycles = period * IR_DUTY_PERCENT / 100;
-  walk(code, [&](uint32_t us, bool isMark) {
-    if (!isMark) space(us);
-    else if (cycOk) markCycles(us, period, onCycles);
-    else markDelay(us, code.khz);
-  });
-  digitalWrite(PIN_IR_LED, LOW);
+  int reps = code.repeats < 1 ? 1 : (code.repeats > IR_MAX_REPEATS ? IR_MAX_REPEATS : code.repeats);
+  IrCode frame = code;  // one frame at a time; the gap between them is ours
+  frame.repeats = 1;
+
+  if (!cycOk) {  // fallback: plain delays (less exact, can't hang)
+    for (int r = 0; r < reps; r++) {
+      if (r > 0) delayMicroseconds(code.gap);
+      walk(frame, [&](uint32_t us, bool isMark) {
+        if (isMark) markDelay(us, code.khz);
+        else delayMicroseconds(us);
+      });
+    }
+    digitalWrite(PIN_IR_LED, LOW);
+    return;
+  }
+
+  const uint32_t period = cyclesPerUs * 1000 / code.khz;
+  const uint32_t onCycles = period * IR_DUTY_PERCENT / 100;
+  for (int r = 0; r < reps; r++) {
+    if (r > 0) {  // gap between frames: interrupts on, timing not critical
+      uint32_t g0 = DWT->CYCCNT;
+      waitUntil(g0, (uint32_t)code.gap * cyclesPerUs);
+    }
+#if IR_SEND_IRQ_OFF
+    noInterrupts();
+#endif
+    const uint32_t t0 = DWT->CYCCNT;
+    uint32_t at = 0;  // where this edge belongs, in cycles from t0
+    walk(frame, [&](uint32_t us, bool isMark) {
+      uint32_t end = at + us * cyclesPerUs;
+      if (isMark) {
+        for (uint32_t t = at; t + period <= end; t += period) {
+          digitalWrite(PIN_IR_LED, HIGH);
+          waitUntil(t0, t + onCycles);
+          digitalWrite(PIN_IR_LED, LOW);
+          waitUntil(t0, t + period);
+        }
+      }
+      waitUntil(t0, end);
+      at = end;
+    });
+    digitalWrite(PIN_IR_LED, LOW);
+#if IR_SEND_IRQ_OFF
+    interrupts();
+#endif
+  }
 }
 
 int rawLength(const IrCode& c) {
@@ -301,8 +332,23 @@ static LearnState state = kIdle;
 static uint32_t learnStart = 0;
 static uint16_t raw[IR_CAPTURE_EDGES];
 
+// Edge time: cycle counter if it works (exact), else micros() (30 us steps).
+static inline uint32_t stamp() { return cycOk ? DWT->CYCCNT : micros(); }
+static inline uint32_t ticksPerUs() { return cycOk ? cyclesPerUs : 1; }
+
 static void onEdge() {
-  if (nEdges < IR_CAPTURE_EDGES) edges[nEdges++] = micros();  // extra edges (held button) are ignored
+  if (nEdges < IR_CAPTURE_EDGES) edges[nEdges++] = stamp();  // extra edges (held button) are ignored
+}
+
+// Stay out of EM2 while listening (the cycle counter stops there, and waking
+// from it adds latency to every edge).
+static bool holdingEm1 = false;
+static void holdAwake(bool on) {
+#if defined(SL_CATALOG_POWER_MANAGER_PRESENT)
+  if (on && !holdingEm1) sl_power_manager_add_em_requirement(SL_POWER_MANAGER_EM1);
+  if (!on && holdingEm1) sl_power_manager_remove_em_requirement(SL_POWER_MANAGER_EM1);
+#endif
+  holdingEm1 = on;
 }
 
 void startLearn() {
@@ -311,6 +357,7 @@ void startLearn() {
   digitalWrite(PIN_IR_RECV_PWR, HIGH);
   delay(50);  // receiver settling after power-up
 #endif
+  holdAwake(true);
   nEdges = 0;
   attachInterrupt(digitalPinToInterrupt(PIN_IR_RECV), onEdge, CHANGE);
   state = kWaiting;
@@ -327,6 +374,7 @@ void stopLearn() {
   digitalWrite(PIN_IR_RECV_PWR, LOW);
 #endif
 #endif
+  holdAwake(false);
   if (state == kWaiting || state == kCapturing) state = kIdle;
 }
 
@@ -343,11 +391,11 @@ LearnState pollLearn(IrCode& out) {
     int n = nEdges;
     uint32_t last = n ? edges[n - 1] : 0;
     interrupts();
-    if (n >= IR_CAPTURE_EDGES || micros() - last > IR_END_GAP_US) {
+    if (n >= IR_CAPTURE_EDGES || stamp() - last > (uint32_t)IR_END_GAP_US * ticksPerUs()) {
       stopLearn();
       int nd = n - 1;
       for (int i = 0; i < nd; i++) {
-        int32_t d = (int32_t)(edges[i + 1] - edges[i]);
+        int32_t d = (int32_t)((edges[i + 1] - edges[i]) / ticksPerUs());
         d += (i % 2 == 0) ? -IR_MARK_EXCESS_US : IR_MARK_EXCESS_US;  // receiver stretches marks
         raw[i] = (uint16_t)(d < 1 ? 1 : (d > 65535 ? 65535 : d));
       }

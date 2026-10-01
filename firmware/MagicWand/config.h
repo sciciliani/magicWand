@@ -91,6 +91,9 @@
 #define IR_LEARN_TIMEOUT_MS 10000
 #define IR_END_GAP_US 120000
 #define IR_MARK_EXCESS_US 50
+// Send each IR frame with interrupts off, so nothing (Bluetooth) can stretch
+// a pulse. Set 0 if the Bluetooth link drops while sending (less exact codes).
+#define IR_SEND_IRQ_OFF 1
 
 // ------------------------------------------------------------------ BLE
 #define BLE_NOTIFY_CHUNK 20      // bytes per notification (safe for MTU 23)

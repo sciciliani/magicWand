@@ -175,12 +175,14 @@ export class MockWand {
       case 'GNAME': this.g[i].n = a2; this._emit(`OK GNAME ${i}`); break;
       case 'GCLR': this.g[i] = { n: '', c: 0, t: 0.45, b: this.g[i].b }; this._emit(`OK GCLR ${i}`); break;
       case 'LEARN':
-        this._emit(`LEARN ${i} waiting`);
+        [3, 2, 1].forEach((k, j) => setTimeout(() => this._line(`LEARN ${i} count ${k}`), j * 1000));
+        setTimeout(() => this._line(`LEARN ${i} go`), 3000);
+        setTimeout(() => this._line(`LEARN ${i} waiting`), 3300);
         setTimeout(() => {
           const d = Array.from({ length: 67 }, (_, k) => (k % 2 ? 560 + (k % 3) * 565 : 560));
           this.c[i] = { n: a2 || this.c[i].n || `code${i}`, k: 38, l: d.length, d };
           this._line(`LEARN ${i} ok ${d.length}`);
-        }, 2500);
+        }, 5300);
         break;
       case 'CODE': {
         const d = rest[1].split(',').map(Number);

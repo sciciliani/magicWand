@@ -80,7 +80,7 @@ monitor:
 
 app:
 	@echo "Open http://localhost:8000 in Chrome (or http://localhost:8000/?demo without a wand)"
-	python3 -m http.server 8000 -d app
+	python3 -m http.server 8000
 
 clean:
 	rm -rf build

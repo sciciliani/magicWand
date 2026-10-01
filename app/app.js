@@ -242,12 +242,14 @@ function onRec(g, what, rest) {
   }
 }
 
+// LEARN c count 3 / count 2 / count 1 / go / waiting / ok|timeout|unsupported
 function onLearn(c, what, n) {
-  if (what === 'waiting') {
+  if (what === 'count' || what === 'go' || what === 'waiting') {
     state.learning = c;
-    toast('Point your remote at the wand tip and press the button');
+    state.learnMsg = what === 'count' ? `Get ready… ${n}` : what === 'go' ? 'GO! Press the remote button now' : '⏳ Listening: press the remote button now';
+    if (what === 'go') toast('GO! Press the remote button now');
     renderCodes();
-    libLearnState('⏳ Point your remote at the wand tip and press the button…');
+    libLearnState(what === 'count' ? `Aim your remote at the wand tip… ${n}` : `${state.learnMsg}`);
   } else {
     state.learning = -1;
     libLearnState(what === 'ok' ? `✓ Learned (${n} bits). Test it, then save.` : '✗ Nothing usable received. Try again, closer.', what === 'ok' ? c : -1);
@@ -360,7 +362,7 @@ function renderCodes() {
       <span class="idx">${i + 1}</span>
       <div>
         <input value="${esc(fromWire(c.n))}" placeholder="${c.k ? `Code ${i + 1}` : 'empty slot'}" maxlength="15" data-act="name" ${c.k && state.link ? '' : 'disabled'} />
-        <div class="meta">${state.learning === i ? '⏳ waiting for your remote…' : c.k ? `${c.l} pulses · ${c.k} kHz` : '—'}</div>
+        <div class="meta">${state.learning === i ? esc(state.learnMsg || 'Get ready…') : c.k ? `${c.l} pulses · ${c.k} kHz` : '—'}</div>
       </div>
       <div class="actions">
         <button class="small" data-act="learn" ${state.link && state.info?.irrx ? '' : 'disabled'}>Learn</button>

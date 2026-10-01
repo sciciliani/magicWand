@@ -49,6 +49,10 @@ static wand::Vec3 calSum = {0, 0, 0};
 static int calN = 0;
 
 static IrCode learnBuf;
+// LEARN countdown: 3, 2, 1 (a tick each, 1 s apart), 0 = "go" (long buzz),
+// -1 = waiting for the go buzz to end, -2 = receiver on, listening.
+static int8_t learnStep = -2;
+static uint32_t learnNextMs = 0;
 
 // ------------------------------------------------------------------ helpers
 static bool validG(int g) { return g >= 0 && g < kMaxGestures; }
@@ -179,17 +183,15 @@ static void handle(char* line) {
     if (!HAS_IR_RECEIVER) return comm::out("ERR LEARN no receiver fitted");
     memset(&learnBuf, 0, sizeof(learnBuf));
     setName(learnBuf.name, sizeof(learnBuf.name), a2 ? a2 : codes[i1].name);
-    // Buzz FIRST, then switch the receiver on: motor and receiver never run
-    // at the same time (motor noise on the supply = garbage edges / hangs).
+    // Countdown first (3, 2, 1, go), run from loop(). The receiver is only
+    // switched on after the last buzz: motor and receiver never run at the
+    // same time (motor noise on the supply = garbage edges).
+    ir::stopLearn();
     haptics::off();
-    haptics::pulse(120);
-    for (uint32_t t = millis(); haptics::busy() && millis() - t < 500;) haptics::update();
-    haptics::off();
-    delay(50);  // let the supply settle after the motor
     mode = kLearning;
     modeTarget = i1;
-    ir::startLearn();
-    comm::outf("LEARN %d waiting", i1);
+    learnStep = 3;
+    learnNextMs = millis();
   } else if (!strcmp(cmd, "CODE")) {  // CODE <c> <khz> <name> <d1,d2,...>  (raw µs, decoded on arrival)
     char* nm = strtok_r(nullptr, " ", &save);
     char* list = strtok_r(nullptr, " ", &save);
@@ -615,7 +617,26 @@ void loop() {
     mode = kNormal;
   }
   power::where(6);  // loop: learn
-  if (mode == kLearning) {
+  if (mode == kLearning && learnStep > -2) {
+    if ((int32_t)(now - learnNextMs) >= 0) {
+      if (learnStep > 0) {
+        comm::outf("LEARN %d count %d", modeTarget, learnStep);
+        haptics::pulse(60);
+        learnNextMs = now + 1000;
+        learnStep--;
+      } else if (learnStep == 0) {
+        comm::outf("LEARN %d go", modeTarget);
+        haptics::pulse(250);
+        learnNextMs = now + 300;  // buzz + 50 ms for the supply to settle
+        learnStep = -1;
+      } else if (!haptics::busy()) {
+        haptics::off();
+        ir::startLearn();
+        comm::outf("LEARN %d waiting", modeTarget);
+        learnStep = -2;
+      }
+    }
+  } else if (mode == kLearning) {
     ir::LearnState s = ir::pollLearn(learnBuf);
     if (s == ir::kDone) {
       codes[modeTarget] = learnBuf;
