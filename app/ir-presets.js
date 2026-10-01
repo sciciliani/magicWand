@@ -50,6 +50,7 @@ export const PROTOCOLS = {
   samsung: { khz: 38, hdr: [4500, 4500], mark: 560, one: 1690, zero: 560, gap: 47000, reps: 1 },
   kaseikyo: { khz: 37, hdr: [3456, 1728], mark: 432, one: 1296, zero: 432, gap: 74000, reps: 1 }, // Panasonic
   coolix: { khz: 38, hdr: [4692, 4692], mark: 552, one: 1656, zero: 552, gap: 5244, reps: 2 },    // Midea & co.
+  rca: { khz: 56, hdr: [4000, 4000], mark: 500, one: 2000, zero: 1000, gap: 8000, reps: 1 },        // RCA: 12 bits + inverse
 };
 
 /** Build a raw code from a hex value, e.g. fromHex('coolix', 'B24D7B84E01F'). */
@@ -93,7 +94,8 @@ export function describe(d, khz) {
   if (!d || !d.length) return 'empty';
   const ms = (d.reduce((a, b) => a + b, 0) / 1000).toFixed(0);
   let kind = 'raw';
-  if (Math.abs(d[0] - 9000) < 1500 && Math.abs(d[1] - 4500) < 900) kind = 'NEC-like';
+  if (khz === 56) kind = 'RCA-like';
+  else if (Math.abs(d[0] - 9000) < 1500 && Math.abs(d[1] - 4500) < 900) kind = 'NEC-like';
   else if (Math.abs(d[0] - 4500) < 900 && Math.abs(d[1] - 4500) < 900) kind = 'Samsung-like';
   else if (Math.abs(d[0] - 2400) < 500) kind = 'Sony-like';
   else if (d.length > 150) kind = 'long (AC?)';
@@ -138,6 +140,15 @@ const PANASONIC = tvActions({
   'Channel up': ['ChUp', pana('400401002C2D')], 'Channel down': ['ChDn', pana('40040100ACAD')],
   'Input / source': ['Input', pana('40040100A0A1')],
 });
+// RCA: 4-bit address (TVs: F), 8-bit command, then both inverted. 56 kHz.
+const rca = (cmd) => {
+  const v = (0xf << 20) | (cmd << 12) | ((~(0xf << 8 | cmd)) & 0xfff);
+  return hex('rca', v.toString(16).toUpperCase().padStart(6, '0'));
+};
+const RCA = tvActions({
+  Power: ['Pwr', rca(0x2a)], 'Volume up': ['VolUp', rca(0x2f)], 'Volume down': ['VolDn', rca(0x2e)],
+  'Channel up': ['ChUp', rca(0x2d)], 'Channel down': ['ChDn', rca(0x2c)],
+});
 const TV_LEARN = [
   { label: 'Power', short: 'Pwr', ...learn }, { label: 'Volume up', short: 'VolUp', ...learn },
   { label: 'Volume down', short: 'VolDn', ...learn }, { label: 'Mute', short: 'Mute', ...learn },
@@ -162,6 +173,7 @@ export const LIBRARY = {
     Sony: { short: 'Sony', note: 'Bravia and older Sony TVs', actions: SONY },
     Toshiba: { short: 'Tosh', note: 'Older Toshiba TVs (NEC)', actions: TOSHIBA },
     Panasonic: { short: 'Pana', note: 'Viera TVs', actions: PANASONIC },
+    RCA: { short: 'RCA', note: 'RCA-format remotes (codes like F2A0D5, 56 kHz)', actions: RCA },
     'Other brand (learn)': { short: 'TV', note: 'Copy each button from your remote', actions: TV_LEARN },
   },
   'Air conditioner': {

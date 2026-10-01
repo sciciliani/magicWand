@@ -260,6 +260,7 @@ bool setProtocol(const char* name, IrCode& c) {
       {"samsung", 38, 4500, 4500, 560, 1690, 560, 47000, 0, 1},  // Samsung TV
       {"coolix", 38, 4692, 4692, 552, 1656, 552, 5244, 0, 2},    // Midea & co. ACs
       {"sony", 40, 2400, 600, 600, 1200, 600, 25000, 1, 3},      // Sony SIRC
+      {"rca", 56, 4000, 4000, 500, 2000, 1000, 8000, 0, 1},      // RCA: 12 bits + inverted copy
   };
   for (const P& p : kP) {
     if (strcasecmp(name, p.n)) continue;
@@ -367,6 +368,18 @@ bool decode(const uint16_t* d, int n, uint16_t khz, IrCode& out) {
 }
 
 // ------------------------------------------------------------------ learn
+// The receiver can't measure a remote's carrier, so guess it from the format:
+// RCA (4 ms + 4 ms header, 24 bits = 12 bits + their inverse) is 56 kHz and
+// Sony (2.4 ms header, pulse-width) is 40 kHz. A 56 kHz TV barely sees 38 kHz.
+static uint16_t carrierFor(const IrCode& c) {
+  if (!c.pw && c.nbits == 24 && c.hdrMark > 3200 && c.hdrMark < 4800 && c.hdrSpace > 3200 && c.hdrSpace < 4800) {
+    uint32_t v = ((uint32_t)c.data[0] << 16) | ((uint32_t)c.data[1] << 8) | c.data[2];
+    if (((v >> 12) ^ (v & 0xFFF)) == 0xFFF) return 56;
+  }
+  if (c.pw && c.hdrMark > 1900 && c.hdrMark < 2900) return 40;
+  return IR_CARRIER_KHZ;
+}
+
 static volatile uint32_t edges[IR_CAPTURE_EDGES];
 static volatile int nEdges = 0;
 static LearnState state = kIdle;
@@ -441,7 +454,11 @@ LearnState pollLearn(IrCode& out) {
         raw[i] = (uint16_t)(d < 1 ? 1 : (d > 65535 ? 65535 : d));
       }
       if (nd < 8) state = kTimeout;
-      else state = decode(raw, nd, IR_CARRIER_KHZ, out) ? kDone : kUnsupported;
+      else if (!decode(raw, nd, IR_CARRIER_KHZ, out)) state = kUnsupported;
+      else {
+        out.khz = carrierFor(out);
+        state = kDone;
+      }
     }
   }
   LearnState s = state;

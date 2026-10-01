@@ -46,7 +46,7 @@ int rawLength(const IrCode& c);                                    // number of 
 int toRaw(const IrCode& c, uint16_t* out, int max);                // returns count
 void hex(const IrCode& c, char* out, size_t cap);                  // "B24D1FE048B7"
 bool fromHex(const char* hex, IrCode& c);                          // sets data + nbits
-// Protocol presets for the HEX command: nec, samsung, coolix, sony
+// Protocol presets for the HEX command: nec, samsung, coolix, sony, rca
 bool setProtocol(const char* name, IrCode& c);
 
 // Learning (non-blocking). startLearn() powers the receiver and waits for a

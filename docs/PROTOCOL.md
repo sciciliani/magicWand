@@ -21,7 +21,7 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `GCLR <g>` | Forget gesture samples | `OK GCLR g` |
 | `LEARN <c> [name]` | Capture a button from a remote into IR slot c (0–11). Countdown first (a buzz tick per second, long buzz on go), then a 10 s window. The capture is decoded (see below) | `LEARN c count 3`, `count 2`, `count 1`, `LEARN c go`, `LEARN c waiting`, then `LEARN c ok <bits>` + `IRCODE …` / `timeout` / `unsupported` |
 | `CODE <c> <khz> <name\|-> <d1,d2,…>` | Upload a raw code: µs durations, mark first. Decoded on arrival | `OK CODE c <durations>` + `IRCODE …`, or `ERR CODE can't decode` |
-| `HEX <c> <nec\|samsung\|coolix\|sony> <name> <hex> [repeats]` | Store a code from its hex value (as IrDump prints it) and a protocol's timings | `OK CODE c <durations>` + `IRCODE …` |
+| `HEX <c> <nec\|samsung\|coolix\|sony\|rca> <name> <hex> [repeats]` | Store a code from its hex value (as IrDump prints it) and a protocol's timings | `OK CODE c <durations>` + `IRCODE …` |
 | `DUMPC <c>` | Read a code back (backup) | `CODE c khz name d1,d2,…` + `IRCODE …` |
 | `CNAME <c> <name>` | Rename code | `OK CNAME c` |
 | `CCLR <c>` | Delete code (and unbind it) | `OK CCLR c` |

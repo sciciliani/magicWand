@@ -232,14 +232,14 @@ static void handle(char* line) {
     ir::send(k);
     status::solid(false);
     comm::out("OK TRY");
-  } else if (!strcmp(cmd, "HEX")) {  // HEX <c> <nec|samsung|coolix|sony> <name> <hex> [repeats]
+  } else if (!strcmp(cmd, "HEX")) {  // HEX <c> <nec|samsung|coolix|sony|rca> <name> <hex> [repeats]
     char* nm = strtok_r(nullptr, " ", &save);
     char* hx = strtok_r(nullptr, " ", &save);
     char* rp = strtok_r(nullptr, " ", &save);
-    if (!validC(i1) || !a2 || !nm || !hx) return comm::out("ERR HEX args: HEX <c> <nec|samsung|coolix|sony> <name> <hex> [repeats]");
+    if (!validC(i1) || !a2 || !nm || !hx) return comm::out("ERR HEX args: HEX <c> <nec|samsung|coolix|sony|rca> <name> <hex> [repeats]");
     IrCode k;
     memset(&k, 0, sizeof(k));
-    if (!ir::setProtocol(a2, k)) return comm::out("ERR HEX protocol: nec, samsung, coolix or sony");
+    if (!ir::setProtocol(a2, k)) return comm::out("ERR HEX protocol: nec, samsung, coolix, sony or rca");
     if (!ir::fromHex(hx, k)) return comm::out("ERR HEX value");
     if (rp) {
       int r = atoi(rp);

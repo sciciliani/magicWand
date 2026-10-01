@@ -94,6 +94,20 @@ int main(int argc, char** argv) {
   for (int i = 0; i < 40; i++) raw[i] = 600;
   check(!ir::decode(raw, 40, 38, b), "same-length pulses rejected");
 
+  {  // RCA (the TV remote's codes): learned -> 56 kHz, HEX rca -> same timing
+    IrCode r = {}, back = {};
+    check(ir::setProtocol("rca", r) && ir::fromHex("F2A0D5", r) && r.khz == 56, "HEX rca F2A0D5 -> 56 kHz");
+    static uint16_t rr[200];
+    int rn = ir::toRaw(r, rr, 200);
+    char rh[16];
+    bool rok = ir::decode(rr, rn, 38, back);
+    ir::hex(back, rh, sizeof(rh));
+    check(rok && !strcmp(rh, "F2A0D5") && ir::carrierFor(back) == 56, "learned RCA F2A0D5 -> 56 kHz");
+    IrCode n = {};
+    ir::setProtocol("nec", n); ir::fromHex("20DF10EF", n);
+    check(ir::carrierFor(n) == 38, "learned NEC stays 38 kHz");
+  }
+
   // Every app preset (TV brands) must decode (file made by test/dump_presets.mjs)
   if (argc > 1) {
     FILE* f = fopen(argv[1], "r");
