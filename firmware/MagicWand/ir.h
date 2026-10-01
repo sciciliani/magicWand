@@ -37,7 +37,7 @@ struct IrCode {
 namespace ir {
 
 void begin();
-void send(const IrCode& code);   // blocking; ~70 ms for a TV code, ~200 ms for Coolix
+void send(const IrCode& code);   // blocking; at least IR_HOLD_MS (like a held button)
 const char* timingInfo();        // IR timing method (for the BOOT line)
 
 // Raw pulses (µs: mark, space, mark, ...) <-> decoded code.

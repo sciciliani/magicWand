@@ -26,6 +26,9 @@
 #ifndef IR_SEND_IRQ_OFF
 #define IR_SEND_IRQ_OFF 1
 #endif
+#ifndef IR_HOLD_MS
+#define IR_HOLD_MS 300
+#endif
 
 namespace ir {
 
@@ -120,54 +123,92 @@ static int walk(const IrCode& c, F emit) {
   return count;
 }
 
+// One frame (or an NEC repeat burst), interrupts off while it goes out.
+static void transmit(const IrCode& f) {
+  if (!cycOk) {  // fallback: plain delays (less exact, can't hang)
+    walk(f, [&](uint32_t us, bool isMark) {
+      if (isMark) markDelay(us, f.khz);
+      else delayMicroseconds(us);
+    });
+    digitalWrite(PIN_IR_LED, LOW);
+    return;
+  }
+  const uint32_t period = cyclesPerUs * 1000 / f.khz;
+  const uint32_t onCycles = period * IR_DUTY_PERCENT / 100;
+#if IR_SEND_IRQ_OFF
+  noInterrupts();
+#endif
+  const uint32_t t0 = DWT->CYCCNT;
+  uint32_t at = 0;  // where this edge belongs, in cycles from t0
+  walk(f, [&](uint32_t us, bool isMark) {
+    uint32_t end = at + us * cyclesPerUs;
+    if (isMark) {
+      for (uint32_t t = at; t + period <= end; t += period) {
+        digitalWrite(PIN_IR_LED, HIGH);
+        waitUntil(t0, t + onCycles);
+        digitalWrite(PIN_IR_LED, LOW);
+        waitUntil(t0, t + period);
+      }
+    }
+    waitUntil(t0, end);
+    at = end;
+  });
+  digitalWrite(PIN_IR_LED, LOW);
+#if IR_SEND_IRQ_OFF
+  interrupts();
+#endif
+}
+
+// Pause between frames, interrupts on (timing not critical).
+static void pauseUs(uint32_t us) {
+  if (!cycOk) { delayMicroseconds(us); return; }
+  uint32_t t0 = DWT->CYCCNT;
+  waitUntil(t0, us * cyclesPerUs);
+}
+
+// NEC / LG: 9 ms + 4.5 ms header, 32 bits. A held NEC remote sends the frame
+// once, then short "repeat" bursts (9 ms, 2.25 ms, 560 us) every 108 ms.
+static bool isNec(const IrCode& c) {
+  return !c.pw && c.nbits == 32 && c.hdrMark > 8000 && c.hdrMark < 10000 && c.hdrSpace > 3500 && c.hdrSpace < 5500;
+}
+
 void send(const IrCode& code) {
   if (code.khz < 20 || code.khz > 60 || code.nbits == 0) return;
   int reps = code.repeats < 1 ? 1 : (code.repeats > IR_MAX_REPEATS ? IR_MAX_REPEATS : code.repeats);
   IrCode frame = code;  // one frame at a time; the gap between them is ours
   frame.repeats = 1;
+  uint32_t gap = code.gap ? code.gap : 40000;
 
-  if (!cycOk) {  // fallback: plain delays (less exact, can't hang)
-    for (int r = 0; r < reps; r++) {
-      if (r > 0) delayMicroseconds(code.gap);
-      walk(frame, [&](uint32_t us, bool isMark) {
-        if (isMark) markDelay(us, code.khz);
-        else delayMicroseconds(us);
-      });
-    }
-    digitalWrite(PIN_IR_LED, LOW);
-    return;
-  }
-
-  const uint32_t period = cyclesPerUs * 1000 / code.khz;
-  const uint32_t onCycles = period * IR_DUTY_PERCENT / 100;
+  uint32_t start = millis();
   for (int r = 0; r < reps; r++) {
-    if (r > 0) {  // gap between frames: interrupts on, timing not critical
-      uint32_t g0 = DWT->CYCCNT;
-      waitUntil(g0, (uint32_t)code.gap * cyclesPerUs);
-    }
-#if IR_SEND_IRQ_OFF
-    noInterrupts();
-#endif
-    const uint32_t t0 = DWT->CYCCNT;
-    uint32_t at = 0;  // where this edge belongs, in cycles from t0
-    walk(frame, [&](uint32_t us, bool isMark) {
-      uint32_t end = at + us * cyclesPerUs;
-      if (isMark) {
-        for (uint32_t t = at; t + period <= end; t += period) {
-          digitalWrite(PIN_IR_LED, HIGH);
-          waitUntil(t0, t + onCycles);
-          digitalWrite(PIN_IR_LED, LOW);
-          waitUntil(t0, t + period);
-        }
-      }
-      waitUntil(t0, end);
-      at = end;
-    });
-    digitalWrite(PIN_IR_LED, LOW);
-#if IR_SEND_IRQ_OFF
-    interrupts();
-#endif
+    if (r > 0) pauseUs(gap);
+    transmit(frame);
   }
+
+  // Then keep going like a button held for IR_HOLD_MS: what a real remote
+  // does on a normal press, and much easier to see/receive than one frame.
+  // NEC gets repeat bursts (a TV reads them as "still held", not as new
+  // presses); other protocols repeat the whole frame, as their remotes do.
+  if (isNec(code)) {
+    IrCode burst = {};
+    burst.khz = code.khz;
+    burst.hdrMark = code.hdrMark;
+    burst.hdrSpace = code.hdrSpace / 2;  // 2.25 ms
+    burst.bitMark = code.bitMark;        // nbits 0: header + stop mark only
+    burst.repeats = 1;
+    uint32_t wait = gap;                 // after the full frame: ~40 ms
+    while (millis() - start < IR_HOLD_MS) {
+      pauseUs(wait);
+      transmit(burst);
+      wait = 96000;                      // bursts every 108 ms (start to start)
+    }
+  } else {
+    while (millis() - start < IR_HOLD_MS) {
+      pauseUs(gap);
+      transmit(frame);
+    }
+  }
+  digitalWrite(PIN_IR_LED, LOW);
 }
 
 int rawLength(const IrCode& c) {

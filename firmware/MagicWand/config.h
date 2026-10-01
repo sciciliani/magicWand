@@ -94,6 +94,10 @@
 // Send each IR frame with interrupts off, so nothing (Bluetooth) can stretch
 // a pulse. Set 0 if the Bluetooth link drops while sending (less exact codes).
 #define IR_SEND_IRQ_OFF 1
+// Each send keeps transmitting like a button held this long (ms), as a real
+// remote does on a normal press. One bare frame (~70 ms) is easy to miss.
+// NEC/LG TVs get "still held" repeat bursts, so this is not a double press.
+#define IR_HOLD_MS 300
 
 // ------------------------------------------------------------------ BLE
 #define BLE_NOTIFY_CHUNK 20      // bytes per notification (safe for MTU 23)
