@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 480">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="#8f6ad8" stop-opacity=".35"/><stop offset="1" stop-color="#8f6ad8" stop-opacity="0"/></radialGradient>
+    <linearGradient id="robe" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5b3d99"/><stop offset="1" stop-color="#46307a"/></linearGradient>
+  </defs>
+  <ellipse cx="200" cy="250" rx="200" ry="230" fill="url(#glow)"/>
+  <path d="M120 300 Q200 270 280 300 L345 480 L55 480 Z" fill="url(#robe)"/>
+  <path d="M200 290 L200 480" stroke="#e3bd62" stroke-width="4" opacity=".7"/>
+  <polygon points="150.0,411.0 152.4,416.7 158.6,417.2 153.9,421.3 155.3,427.3 150.0,424.1 144.7,427.3 146.1,421.3 141.4,417.2 147.6,416.7" fill="#e3bd62"/><polygon points="265.0,378.0 266.9,382.5 271.7,382.8 268.0,386.0 269.1,390.7 265.0,388.1 260.9,390.7 262.0,386.0 258.3,382.8 263.1,382.5" fill="#e3bd62"/><polygon points="300.0,449.0 301.6,452.8 305.7,453.1 302.6,455.8 303.5,459.9 300.0,457.7 296.5,459.9 297.4,455.8 294.3,453.1 298.4,452.8" fill="#e3bd62"/><polygon points="110.0,465.0 111.3,468.2 114.8,468.5 112.1,470.7 112.9,474.0 110.0,472.2 107.1,474.0 107.9,470.7 105.2,468.5 108.7,468.2" fill="#e3bd62"/>
+  <path d="M135 315 L130 400" stroke="#5b3d99" stroke-width="34" stroke-linecap="round"/><circle cx="132" cy="410" r="13" fill="#e8c6a2"/><path d="M265 305 L315 225" stroke="#5b3d99" stroke-width="34" stroke-linecap="round"/><circle cx="320" cy="216" r="13" fill="#e8c6a2"/><path d="M320 204 L322 178" stroke="#e8c6a2" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="200" cy="220" r="50" fill="#e8c6a2"/>
+  <path d="M150 232 Q150 330 200 385 Q250 330 250 232 Q235 262 200 262 Q165 262 150 232 Z" fill="#f3eee6"/>
+  <path d="M165 268 Q200 290 235 268" stroke="#d9d2c6" stroke-width="3" fill="none"/>
+  <path d="M188 280 Q200 270 212 280" stroke="#8a3b3b" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M172 252 Q186 244 200 252 Q214 244 228 252 Q214 262 200 256 Q186 262 172 252 Z" fill="#f3eee6"/>
+  <circle cx="182" cy="214" r="5" fill="#2a2033"/><circle cx="218" cy="214" r="5" fill="#2a2033"/>
+  <path d="M170 194 L194 202" stroke="#f3eee6" stroke-width="6" stroke-linecap="round"/><path d="M230 194 L206 202" stroke="#f3eee6" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="200" cy="232" r="7" fill="#d9a882"/>
+  <path d="M90 186 Q200 150 310 186 Q200 206 90 186 Z" fill="#6b47b8"/>
+  <path d="M118 182 Q160 120 205 40 Q232 12 262 30 Q236 34 228 60 Q240 130 282 182 Q200 166 118 182 Z" fill="#6b47b8"/>
+  <path d="M120 180 Q200 162 280 180 L276 166 Q200 150 124 166 Z" fill="#e3bd62"/>
+  <polygon points="178.0,111.0 180.4,116.7 186.6,117.2 181.9,121.3 183.3,127.3 178.0,124.0 172.7,127.3 174.1,121.3 169.4,117.2 175.6,116.7" fill="#e3bd62"/><polygon points="222.0,85.0 223.9,89.5 228.7,89.8 225.0,93.0 226.1,97.7 222.0,95.2 217.9,97.7 219.0,93.0 215.3,89.8 220.1,89.5" fill="#e3bd62"/><polygon points="206.0,134.0 207.6,137.8 211.7,138.1 208.6,140.8 209.5,144.9 206.0,142.7 202.5,144.9 203.4,140.8 200.3,138.1 204.4,137.8" fill="#e3bd62"/>
+  <path d="M300 170 Q322 160 344 170" stroke="#a39a8a" stroke-width="3" fill="none"/><path d="M296 182 Q322 170 348 182" stroke="#a39a8a" stroke-width="3" fill="none"/>
+</svg>

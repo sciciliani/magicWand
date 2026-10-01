@@ -2,6 +2,7 @@
 // Protocol reference: docs/PROTOCOL.md
 import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=10';
 import { LIBRARY } from './ir-presets.js?v=10';
+import { initTraining } from './training.js?v=1';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -38,6 +39,16 @@ const state = {
 // connected (at start and after every disconnect).
 const demo = new URLSearchParams(location.search).has('demo');
 const connectDlg = $('#connectDlg');
+
+// Training tab (the wizard). It reads the motion stream and REC/INFO lines.
+const training = initTraining({
+  send: (line) => send(line),
+  connected: () => !!state.link,
+  info: () => state.info,
+  openLibrary: (o) => openLibrary(o),
+  log: (text) => logLine(text, 'in'),
+  perform: demo ? (move, speed) => state.link?.perform?.(move, speed) : null,
+});
 connectDlg.addEventListener('cancel', (e) => e.preventDefault()); // Esc can't dismiss it
 
 async function showConnect(msg = '') {
@@ -93,6 +104,8 @@ async function connectTo(device) {
   document.body.classList.remove('offline');
   $('#connectBtn').textContent = 'Release wand';
   send('HELLO');
+  training.onConnect();
+  if (training.firstTime()) showTab('training');  // first visit: the wizard teaches the moves
   updateStream();
 }
 
@@ -111,6 +124,7 @@ function stopStream() {
 // TEST (ble-silabs): page-exit STREAM 0 disabled so the wand gets a link that
 // drops mid-stream on close/reload. Uncomment the three marked lines to restore.
 document.addEventListener('visibilitychange', () => {
+  training.onShown(shownTab() === 'training' && document.visibilityState === 'visible');
   if (!state.link) return;
   if (document.visibilityState === 'hidden') { /* TEST stopStream(); */ }
   else updateStream();
@@ -136,6 +150,7 @@ function onClosed() {
   state.link = null;
   state.info = null;
   state.recording = state.learning = -1;
+  training.onDisconnect();
   setStatus('No wand connected');
   render();
   if ($('#libDlg').open) $('#libDlg').close();
@@ -198,6 +213,7 @@ function onLine(line) {
     case 'SLEEP': toast('Wand is going to sleep 💤'); break;
     case 'ERR': toast(line.slice(4), true); break;
   }
+  training.onLine(tag, p);
 }
 
 function gestureName(g) {
@@ -557,19 +573,21 @@ $('#cmdForm').addEventListener('submit', (e) => {
 });
 
 // ------------------------------------------------------------------ tabs, toast
-// The motion stream runs only while the Live tab is shown in a visible page.
-const liveTabShown = () => document.querySelector('.tabs button[aria-selected="true"]')?.dataset.tab === 'live';
+// The motion stream runs only while the Live or Training tab is shown in a visible page.
+const shownTab = () => document.querySelector('.tabs button[aria-selected="true"]')?.dataset.tab;
+const streamTabShown = () => ['live', 'training'].includes(shownTab());
 function updateStream() {
   if (!state.link) return;
-  send(`STREAM ${liveTabShown() && document.visibilityState === 'visible' ? 1 : 0}`);
+  send(`STREAM ${streamTabShown() && document.visibilityState === 'visible' ? 1 : 0}`);
 }
 
-document.querySelectorAll('.tabs button').forEach((b) =>
-  b.addEventListener('click', () => {
-    setTimeout(updateStream, 0);  // after the tab switch below
-    document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x === b));
-    document.querySelectorAll('.tab').forEach((t) => (t.hidden = t.id !== 'tab-' + b.dataset.tab));
-  }));
+function showTab(name) {
+  document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach((t) => (t.hidden = t.id !== 'tab-' + name));
+  training.onShown(name === 'training' && document.visibilityState === 'visible');
+  updateStream();
+}
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
 let toastTimer;
 function toast(text, err = false) {

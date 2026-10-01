@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="app/style.css?v=15" />
+  <link rel="stylesheet" href="app/style.css?v=16" />
 </head>
 <body>
   <header>
@@ -24,6 +24,7 @@
   </header>
 
   <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="training">Training</button>
     <button role="tab" data-tab="live" aria-selected="true">Live</button>
     <button role="tab" data-tab="spells">Spells</button>
     <button role="tab" data-tab="codes">IR codes</button>
@@ -32,6 +33,20 @@
   </nav>
 
   <main>
+    <!-- TRAINING ---------------------------------------------------------->
+    <section id="tab-training" class="tab" hidden>
+      <div class="card wizard-stage">
+        <div class="wizard-figure"><img id="wizImg" alt="The wizard" /></div>
+        <div class="wizard-talk">
+          <div class="speech"><p id="wizSay"></p></div>
+          <div id="trainArea" class="train-area"></div>
+          <div class="row wizard-controls">
+            <button id="wizVoice" class="small"></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- LIVE -------------------------------------------------------------->
     <section id="tab-live" class="tab">
       <div class="card">
@@ -182,6 +197,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script type="module" src="app/app.js?v=15"></script>
+  <script type="module" src="app/app.js?v=16"></script>
 </body>
 </html>

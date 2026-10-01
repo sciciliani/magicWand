@@ -118,7 +118,29 @@ export class MockWand {
     this.c = Array.from({ length: 12 }, () => ({ n: '', k: 0, l: 0, d: [] }));
     this.s = { thr: 0.45, sleep: 30, wake: 3, haptics: 1, axis: [1, 0, 0], name: 'Wand-DEMO' };
     this.stream = false;
+    this.practice = false;
     this.t = 0;
+  }
+
+  // Demo only: act out a move on the motion stream (Training tab test buttons).
+  // speed 1 = normal, 1/3 = much too slow, 3 = rushed.
+  perform(move, speed = 1) {
+    const bump = (s, a, b) => (s <= a || s >= b ? 0 : Math.sin(Math.PI * (s - a) / (b - a)) ** 2);
+    const dur = { circle: 1, hit: 0.3, zigzag: 0.9 }[move] / speed;
+    const P = 280 * speed;  // 420 deg/s peak (x100 / 1.5)
+    const rows = [];
+    const n = Math.max(3, Math.round(dur * 25));
+    for (let i = 0; i < 6; i++) rows.push([0, 0, 0, 0, 8]);
+    for (let i = 0; i < n; i++) {
+      const s = i / n;
+      let r = 0, u = 0;
+      if (move === 'circle') { const e = 0.6 * bump(s, 0, 1) + 0.4; r = 0.8 * P * e * Math.cos(2 * Math.PI * s); u = 0.8 * P * e * Math.sin(2 * Math.PI * s); }
+      if (move === 'hit') u = 1.2 * P * bump(s, 0, 0.5) - P * bump(s, 0.5, 1);
+      if (move === 'zigzag') r = P * (bump(s, 0, 0.33) - bump(s, 0.33, 0.66) + bump(s, 0.66, 1));
+      rows.push([Math.round(r), Math.round(u), 0, 0, Math.round(Math.hypot(r, u) * 1.5)]);
+    }
+    for (let i = 0; i < 14; i++) rows.push([0, 0, 0, 0, 8]);
+    this._perf = rows;
   }
   onLine(cb) { this._line = cb; }
   onClose(cb) { this._close = cb; }
@@ -132,11 +154,14 @@ export class MockWand {
   _tick() {
     this.t += 0.04;
     const t = this.t, burst = Math.max(0, Math.sin(t * 0.8)) ** 12;
-    if (this.stream) {
-      const f = [Math.sin(t * 7) * 180 * burst, Math.cos(t * 7) * 150 * burst, Math.sin(t * 3) * 20, burst * 30];
-      this._line(`F ${f.map((x) => Math.round(x)).join(' ')} ${Math.round(400 * burst)}`);
+    if (this.stream && this._perf?.length) {
+      this._line(`F ${this._perf.shift().join(' ')}`);
+    } else if (this.stream) {
+      const k = this.practice ? 0 : burst;  // practising: hold still until a move is acted out
+      const f = [Math.sin(t * 7) * 180 * k, Math.cos(t * 7) * 150 * k, Math.sin(t * 3) * 20 * (k || 0.05), k * 30];
+      this._line(`F ${f.map((x) => Math.round(x)).join(' ')} ${Math.round(400 * k + 8)}`);
     }
-    if (Math.abs((t % 7.85) - 2) < 0.02) {
+    if (!this.practice && Math.abs((t % 7.85) - 2) < 0.02) {
       const trained = this.g.map((g, i) => [g, i]).filter(([g]) => g.c > 0);
       if (trained.length) {
         const [g, i] = trained[Math.floor(Math.random() * trained.length)];
@@ -201,6 +226,7 @@ export class MockWand {
         this.s[a1] = +a2; this._emit(`OK SET ${a1} ${a2}`); break;
       case 'CAL': this._emit('CAL hold the wand still, tip pointing straight up'); setTimeout(() => this._line('CAL ok 0.012 0.998 -0.051'), 1500); break;
       case 'BUZZ': this._emit('OK BUZZ'); break;
+      case 'PRACTICE': this.practice = a1 === '1'; this._emit(`OK PRACTICE ${this.practice ? 1 : 0}`); break;
       case 'BAT': this._emit('BAT 76 3.92 0'); break;
       case 'SLEEP': this._emit('SLEEP requested'); setTimeout(() => this.disconnect(), 300); break;
       case 'RESET': this._emit(a1 === 'yes' ? 'OK RESET' : 'ERR type RESET yes'); break;

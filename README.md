@@ -96,6 +96,20 @@ Keep it empty.
   VCC/+). A bare VS1838B, seen from the front (dome), legs down, is OUT – GND – VCC.
   Swapping VCC and GND can kill it. A 100 nF capacitor across its VCC–GND helps against noise.
 
+## Training (the wizard)
+
+The **Training** tab opens by itself the first time a wand connects. A wizard teaches three fixed moves,
+checks every attempt from the wand's motion stream and says what to fix ("Faster!", "Slower", "Side to side"):
+
+1. **Circle**: a full loop with the tip, about one second.
+2. **Hit**: a quick snap up and straight back down.
+3. **ZigZag**: side to side, fast: right, left, right.
+
+Three good attempts per move, then each move gets an action from the remote library. If the wand doesn't know
+a move yet, it watches you do it three times first (the same as recording in the Spells tab). While you
+practise, the wand is in `PRACTICE` mode: moves never send IR. The numbers of every attempt are in the Log tab
+(`TRAIN …`); the limits are in `TUNE` at the top of `app/training-moves.js`. Wizard art: see `app/wizard/README.md`.
+
 ## Arduino IDE setup
 
 1. **Arduino IDE → Settings → Additional boards manager URLs**:

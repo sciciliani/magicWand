@@ -186,3 +186,55 @@ dialog input, #wandName { padding: 6px 8px; border: 1px solid var(--line); borde
 dialog select { width: 100%; min-width: 0; }
 dialog form { min-width: 0; }
 
+
+/* ---------------------------------------------------------------- training (the wizard) */
+.wizard-stage { display: grid; grid-template-columns: minmax(200px, 340px) 1fr; gap: 20px; align-items: start; }
+@media (max-width: 700px) { .wizard-stage { grid-template-columns: 1fr; gap: 12px; } .wizard-figure img { max-height: 200px; } }
+.wizard-figure { display: flex; justify-content: center; }
+.wizard-figure img {
+  width: 100%; max-height: 440px; object-fit: contain;
+  filter: drop-shadow(0 0 24px #8f6ad855); animation: wiz-float 6s ease-in-out infinite;
+}
+@keyframes wiz-float { 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .wizard-figure img { animation: none; } }
+.wizard-talk { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.speech {
+  position: relative; background: #efe6d2; color: #2a2033; border-radius: 14px; padding: 14px 18px;
+  font-family: var(--serif); font-size: 20px; line-height: 1.35; min-height: 5.6em;
+  box-shadow: 0 0 0 1px #c9a24a, 0 6px 18px #0007;
+}
+.speech::before {  /* tail toward the wizard */
+  content: ""; position: absolute; left: -10px; top: 26px; border: 10px solid transparent;
+  border-right-color: #efe6d2; border-left: 0;
+}
+@media (max-width: 700px) { .speech::before { left: 40px; top: -10px; border: 10px solid transparent; border-bottom-color: #efe6d2; border-top: 0; } }
+.speech p { margin: 0; }
+.train-area { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.train-area .big { padding: 11px 22px; font-size: 16px; }
+.train-steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0; flex-wrap: wrap; }
+.train-steps li {
+  font-family: var(--display); font-size: 12px; letter-spacing: 1px; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 99px; color: var(--muted);
+}
+.train-steps li.now { color: var(--gold); border-color: var(--accent); }
+.train-steps li.done { color: var(--ok); border-color: #7cc38a66; }
+.train-steps li.done::before { content: "✓ "; }
+.move-demo { width: 84px; height: 84px; flex: none; }
+.move-demo.big { width: 180px; height: 180px; align-self: center; }
+.move-demo .trail { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 4 5; opacity: .7; }
+.move-demo .spark { fill: #fff3c4; filter: drop-shadow(0 0 4px #e3bd62); }
+.move-demo.pulse { animation: demo-pulse 1.2s ease 2; }
+@keyframes demo-pulse { 50% { transform: scale(1.12); } }
+.try-row { display: flex; gap: 18px; align-items: center; }
+.stars span { font-size: 34px; color: var(--line); margin-right: 4px; transition: color .3s, text-shadow .3s; }
+.stars span.on { color: var(--gold); text-shadow: 0 0 12px #e3bd6299; }
+.pretend { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; }
+button.linkish { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 0; }
+.action-list { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.action-row {
+  display: grid; grid-template-columns: 56px 1fr auto; gap: 12px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+}
+.action-row .move-demo { width: 56px; height: 56px; }
+.action-row.teaching { border-color: var(--accent); }
+.wizard-controls { justify-content: flex-end; width: 100%; }

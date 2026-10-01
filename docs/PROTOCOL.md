@@ -16,6 +16,7 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `HELLO` / `INFO` | Full state | `INFO {json}` (below) |
 | `PING` | Liveness | `PONG` |
 | `STREAM 1\|0` | Live motion features at 25 Hz | `OK STREAM n`, then `F …` lines |
+| `PRACTICE 1\|0` | Training: moves are still reported (`SEG`, `MATCH`) but no spell fires: no buzz, no IR. Turns off on disconnect | `OK PRACTICE n` |
 | `REC <g> [name]` | Record one training sample into gesture slot g (0–7). The wand ticks twice and buzzes "go", then waits up to 5 s for a move | `REC g armed`, then `REC g ok <count> <threshold>` or `REC g timeout` |
 | `GNAME <g> <name>` | Rename gesture | `OK GNAME g` |
 | `GCLR <g>` | Forget gesture samples | `OK GCLR g` |

@@ -37,6 +37,7 @@ static uint32_t modeDeadline = 0;
 static uint32_t recArmAt = 0;     // recording starts after the countdown buzz
 
 static bool streaming = false;
+static bool practice = false;  // Training tab: recognize, but never buzz or send IR
 static uint32_t lastMotionMs = 0;
 static uint32_t cooldownUntil = 0;
 static uint32_t nextSampleUs = 0;
@@ -260,6 +261,9 @@ static void handle(char* line) {
     if (!storage::saveCode(i1)) return comm::out("ERR storage full or failed");
     comm::outf("OK CODE %d %d", i1, ir::rawLength(k));
     describeCode(i1);
+  } else if (!strcmp(cmd, "PRACTICE")) {  // PRACTICE 1|0: moves are reported, spells don't fire
+    practice = i1 == 1;
+    comm::outf("OK PRACTICE %d", practice);
   } else if (!strcmp(cmd, "IRDUMP")) {  // IRDUMP = last learned code, IRDUMP <c> = slot c (Serial only)
     if (a1 && validC(i1)) printCodeShort(codes[i1]);
     else printCodeShort(learnBuf);
@@ -366,7 +370,7 @@ static void onSegment() {
 
   wand::Match m = wand::classify(gestures, kMaxGestures, t, settings.threshold);
   comm::outf("MATCH %d %s %s %d", m.gid, FX(m.dist, 3).s, FX(m.second >= 1e8f ? -1.0f : m.second, 3).s, m.accepted);
-  if (!m.accepted) return;  // unrecognized moves stay silent
+  if (!m.accepted || practice) return;  // unrecognized moves stay silent; practice never fires
   int c = settings.bind[m.gid] == kNoBinding ? -1 : settings.bind[m.gid];
   bool fire = c >= 0 && codes[c].khz && (CAST_WHILE_CHARGING || !power::onCharger());
   haptics::play(haptics::kCast);
@@ -704,7 +708,7 @@ void loop() {
   static bool wasConnected = false;
   bool connected = comm::bleConnected();
   if (connected != wasConnected) lastMotionMs = millis();  // connect/disconnect = activity
-  if (!connected && wasConnected) streaming = false;       // app gone: stop the motion stream
+  if (!connected && wasConnected) streaming = practice = false;  // app gone: stop stream and practice
   wasConnected = connected;
   // Fresh millis() and signed math: lastMotionMs may have been set a moment
   // AFTER `now` (sampleOnce ran in between); unsigned "now - later" wraps to a
