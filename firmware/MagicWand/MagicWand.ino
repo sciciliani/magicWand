@@ -114,34 +114,12 @@ static void describeCode(int c) {
              k.bitMark, k.one, k.zero, k.gap, k.pw ? "pulse-width" : "pulse-distance", k.khz);
 }
 
-// Serial-only dump of the last capture, exactly as the receiver saw it:
-// mark/space pairs in µs, 8 per line, a new line after each frame gap.
-static void dumpCapture(const char* result) {
-  const uint16_t* d;
-  int n = ir::lastCapture(&d);
-  char line[160];
-  uint32_t total = 0;
-  int frames = n ? 1 : 0;
-  for (int i = 0; i < n; i++) {
-    total += d[i];
-    if (i % 2 == 1 && d[i] > 5000 && i < n - 1) frames++;
-  }
-  snprintf(line, sizeof(line), "IRDUMP %s: %d durations, %d frame(s), %lu ms (us, mark/space; marks already -%d us)",
-           result, n, frames, (unsigned long)(total / 1000), IR_MARK_EXCESS_US);
+// Serial only: just the code, how many times it repeats, and the carrier.
+static void printCodeShort(const IrCode& k) {
+  char h[IR_MAX_BYTES * 2 + 1], line[100];
+  ir::hex(k, h, sizeof(h));
+  snprintf(line, sizeof(line), "IRDUMP code %s  repeats %u  %u kHz", k.nbits ? h : "(none)", k.repeats, k.khz);
   comm::serialOut(line);
-  int len = 0, pairs = 0;
-  for (int i = 0; i < n; i += 2) {
-    bool hasSpace = i + 1 < n;
-    bool gap = hasSpace && d[i + 1] > 5000;
-    len += snprintf(line + len, sizeof(line) - len, hasSpace ? "%s%u/%u" : "%s%u", pairs ? "  " : "IRDUMP   ",
-                    d[i], hasSpace ? d[i + 1] : 0);
-    pairs++;
-    if (gap || pairs == 8 || !hasSpace || i + 2 >= n) {
-      if (gap) snprintf(line + len, sizeof(line) - len, "  <- gap");
-      comm::serialOut(line);
-      len = pairs = 0;
-    }
-  }
 }
 
 static void dumpCode(int c) {
@@ -280,8 +258,9 @@ static void handle(char* line) {
     if (!storage::saveCode(i1)) return comm::out("ERR storage full or failed");
     comm::outf("OK CODE %d %d", i1, ir::rawLength(k));
     describeCode(i1);
-  } else if (!strcmp(cmd, "IRDUMP")) {  // last capture, raw (Serial only)
-    dumpCapture("last capture");
+  } else if (!strcmp(cmd, "IRDUMP")) {  // IRDUMP = last learned code, IRDUMP <c> = slot c (Serial only)
+    if (a1 && validC(i1)) printCodeShort(codes[i1]);
+    else printCodeShort(learnBuf);
   } else if (!strcmp(cmd, "DUMPC")) {
     if (!validC(i1)) return comm::out("ERR DUMPC");
     dumpCode(i1);
@@ -674,18 +653,16 @@ void loop() {
       codes[modeTarget] = learnBuf;
       if (!storage::saveCode(modeTarget)) comm::out("ERR storage full or failed");
       comm::outf("LEARN %d ok %u", modeTarget, learnBuf.nbits);
-      describeCode(modeTarget);
 #if IR_DEBUG
-      dumpCapture("ok");
+      printCodeShort(learnBuf);
+#else
+      describeCode(modeTarget);
 #endif
       haptics::play(haptics::kSaved);
       status::flash(status::kSaved);
       mode = kNormal;
     } else if (s == ir::kTimeout || s == ir::kUnsupported) {
       comm::outf("LEARN %d %s", modeTarget, s == ir::kTimeout ? "timeout" : "unsupported");
-#if IR_DEBUG
-      dumpCapture(s == ir::kTimeout ? "timeout" : "unsupported");
-#endif
       haptics::play(haptics::kError);
       status::flash(status::kError);
       mode = kNormal;

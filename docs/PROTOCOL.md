@@ -23,7 +23,7 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `CODE <c> <khz> <name\|-> <d1,d2,…>` | Upload a raw code: µs durations, mark first. Decoded on arrival | `OK CODE c <durations>` + `IRCODE …`, or `ERR CODE can't decode` |
 | `HEX <c> <nec\|samsung\|coolix\|sony\|rca> <name> <hex> [repeats]` | Store a code from its hex value (as IrDump prints it) and a protocol's timings | `OK CODE c <durations>` + `IRCODE …` |
 | `DUMPC <c>` | Read a code back (backup) | `CODE c khz name d1,d2,…` + `IRCODE …` |
-| `IRDUMP` | Print the last LEARN capture exactly as received, to the USB Serial Monitor only (also printed after every LEARN when `IR_DEBUG` is 1) | `IRDUMP …` lines: mark/space pairs in µs, one line per frame or 8 pairs |
+| `IRDUMP [c]` | Print the last learned code (or slot c) to the USB Serial Monitor only: hex, repeats, carrier. Also printed after every LEARN when `IR_DEBUG` is 1 | `IRDUMP code F2A0D5  repeats 3  56 kHz` |
 | `CNAME <c> <name>` | Rename code | `OK CNAME c` |
 | `CCLR <c>` | Delete code (and unbind it) | `OK CCLR c` |
 | `SEND <c>` | Fire a code now | `OK SEND c` |

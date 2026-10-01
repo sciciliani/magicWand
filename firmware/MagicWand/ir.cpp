@@ -398,12 +398,6 @@ static volatile int nEdges = 0;
 static LearnState state = kIdle;
 static uint32_t learnStart = 0;
 static uint16_t raw[IR_CAPTURE_EDGES];
-static int rawN = 0;  // durations in raw[] from the last capture
-
-int lastCapture(const uint16_t** d) {
-  *d = raw;
-  return rawN;
-}
 
 // Edge time: cycle counter if it works (exact), else micros() (30 us steps).
 static inline uint32_t stamp() { return cycOk ? DWT->CYCCNT : micros(); }
@@ -432,7 +426,6 @@ void startLearn() {
 #endif
   holdAwake(true);
   nEdges = 0;
-  rawN = 0;
   attachInterrupt(digitalPinToInterrupt(PIN_IR_RECV), onEdge, CHANGE);
   state = kWaiting;
   learnStart = millis();
@@ -468,7 +461,6 @@ LearnState pollLearn(IrCode& out) {
     if (n >= IR_CAPTURE_EDGES || stamp() - last > (uint32_t)IR_END_GAP_US * ticksPerUs()) {
       stopLearn();
       int nd = n - 1;
-      rawN = nd > 0 ? nd : 0;
       for (int i = 0; i < nd; i++) {
         int32_t d = (int32_t)((edges[i + 1] - edges[i]) / ticksPerUs());
         d += (i % 2 == 0) ? -IR_MARK_EXCESS_US : IR_MARK_EXCESS_US;  // receiver stretches marks
