@@ -32,7 +32,7 @@
 // wire) and lower the LED resistor: 4 pins + 33R = ~4-5x the light.
 // Only the free port-C pins D0, D4, D5, D6 (all switched in one register write).
 // Never list D1. With just D6 nothing changes.
-#define IR_LED_PINS {D6}  // e.g. {D0, D4, D5, D6}
+#define IR_LED_PINS {D4, D5, D6}  // e.g. {D0, D4, D5, D6}
 #define PIN_MOTOR D2
 #define PIN_IR_RECV D3
 // Receiver VCC on D7: the firmware powers it only while learning a code
