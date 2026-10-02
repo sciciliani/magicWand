@@ -18,7 +18,7 @@ SEEED_URL := https://files.seeedstudio.com/arduino/package_seeeduino_boards_inde
 CXX       ?= g++
 CHECK     := $(CXX) -std=gnu++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter -x c++ -include Arduino.h
 
-.PHONY: help sync test test-gesture test-ir test-training check-fw setup compile upload monitor app clean
+.PHONY: help sync test test-gesture test-ir test-training test-i18n check-fw setup compile upload monitor app clean
 
 help:
 	@echo "make sync       copy firmware/common/gesture.* into both sketches"
@@ -34,7 +34,7 @@ sync:
 	cp firmware/common/gesture.h firmware/common/gesture.cpp $(SKETCH)/
 	cp firmware/common/gesture.h firmware/common/gesture.cpp $(SKETCH_NRF)/
 
-test: test-gesture test-ir test-ir-codec test-training
+test: test-gesture test-ir test-ir-codec test-training test-i18n
 	@for s in $(SKETCH) $(SKETCH_NRF); do \
 	  cmp -s firmware/common/gesture.cpp $$s/gesture.cpp && cmp -s firmware/common/gesture.h $$s/gesture.h \
 	  || { echo "$$s/gesture.* differs from firmware/common: run 'make sync'"; exit 1; }; done
@@ -54,6 +54,10 @@ build/gen_training_motions: test/gen_training_motions.cpp test/test_gesture.cpp 
 test-training: build/gen_training_motions
 	./build/gen_training_motions > build/training_motions.json
 	node test/test_training.mjs build/training_motions.json
+
+# Every text in the app has es/pt/it/de translations (app/lang/*.js)
+test-i18n:
+	node test/test_i18n.mjs
 
 test-ir:
 	node test/test_ir.mjs

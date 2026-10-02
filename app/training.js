@@ -2,26 +2,47 @@
 // Hit, ZigZag), checks every attempt from the wand's motion stream, then lets
 // you give each move an action from the remote library.
 //
+// For each move: the wizard explains it while the example plays ONCE, then
+// every attempt: "Ready… one Circle… now!" (hold still until "now"), the wand
+// buzzes on "now", you do ONE move and hold still, he reads it and answers.
+//
 // The moves are checked here, in the app (training-moves.js). While practising
 // the wand is in PRACTICE mode: it still sees moves but never fires a spell,
 // so nothing gets sent to the TV by accident.
-import { MOVES, MoveCatcher, measure, judge, describe } from './training-moves.js?v=1';
+import { MOVES, MoveCatcher, measure, judge, describe } from './training-moves.js?v=2';
+import { t, lang, SPEECH_TAG, ascii, allTranslations } from './i18n.js?v=1';
 
 const ORDER = ['circle', 'hit', 'zigzag'];
-const NEEDED = 3;          // good attempts per move
-const POSES = ['welcome', 'talk1', 'talk2', 'talk3', 'yes', 'no'];
-const TALK = ['talk1', 'talk2', 'talk3'];
+const NEEDED = 3;            // good attempts per move
+const MOVING_ENERGY = 90;    // above this while counting = the wand moved too early (≈ deg/s)
+const BEAT_MS = 750;         // pause between "Ready…", "one Circle…", "now!" 
+const ARM_DELAY = 350;       // ms after the buzz before watching (the motor shakes the wand)
+const GO_TIMEOUT = 6000;     // no move this long after the buzz: count again
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-// Wizard art: app/wizard/<pose>.png if it exists, else the placeholder .svg.
-const art = {};
-for (const p of POSES) {
-  art[p] = `app/wizard/${p}.svg`;
+// ---------------------------------------------------------------- wizard art
+// Real art: app/wizard/<name>.png. Each mood can have several images (rotated).
+// Without PNGs the .svg placeholders are used.
+const SETS = { welcome: ['welcome'], talk: ['talk1', 'talk2', 'talk3'], yes: ['yes', 'yes2'], no: ['no', 'no2'] };
+const SVG = new Set(['welcome', 'talk1', 'talk2', 'talk3', 'yes', 'no']);
+const pngs = new Set();
+const artReady = Promise.all(Object.values(SETS).flat().map((n) => new Promise((res) => {
   const img = new Image();
-  img.onload = () => { art[p] = img.src; };
-  img.src = `app/wizard/${p}.png`;
+  img.onload = () => { pngs.add(n); res(); };
+  img.onerror = res;
+  img.src = `app/wizard/${n}.png`;
+})));
+function artFor(mood, k = 0) {
+  const names = SETS[mood];
+  if (pngs.size) {
+    const have = names.filter((n) => pngs.has(n));
+    const list = have.length ? have : ['welcome'].filter((n) => pngs.has(n));
+    if (list.length) return `app/wizard/${list[k % list.length]}.png`;
+  }
+  const svg = names.filter((n) => SVG.has(n));
+  return `app/wizard/${svg[k % svg.length]}.svg`;
 }
 
 const store = {
@@ -29,51 +50,88 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
 };
 
+// ---------------------------------------------------------------- voice
+// The best voice the browser has for the current language: "Enhanced/Premium/
+// Natural" system voices or Chrome's Google voices first, novelty voices never.
+const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|junior|ralph|fred|kathy|grandma|grandpa|eddy|flo\b|reed|rocko|sandy|shelley/i;
+const DEEP = { en: /daniel|arthur|oliver|george|james|thomas|male/i, es: /jorge|diego|juan|carlos|pablo|enrique|male/i,
+  pt: /felipe|joaquim|daniel|male/i, it: /luca|cosimo|diego|male/i, de: /markus|yannick|martin|hans|male/i };
+const hasSpeech = () => typeof speechSynthesis !== 'undefined';
+function voicesFor(l) {
+  if (!hasSpeech()) return [];
+  return speechSynthesis.getVoices().filter((v) => v.lang.replace('_', '-').toLowerCase().startsWith(l));
+}
+function bestVoice(l) {
+  const tag = SPEECH_TAG[l].toLowerCase();
+  const score = (v) => (NOVELTY.test(v.name) ? -100 : 0) + (v.lang.replace('_', '-').toLowerCase() === tag ? 6 : 0) +
+    (/premium|enhanced|natural|neural/i.test(v.name) ? 8 : 0) + (/google/i.test(v.name) ? 5 : 0) + (DEEP[l]?.test(v.name) ? 3 : 0);
+  return voicesFor(l).sort((a, b) => score(b) - score(a))[0] || null;
+}
+
 export function initTraining(app) {
   // app: { send, connected(), info(), openLibrary({spell}), log(text), perform(move, speed) | null }
-  const t = {
+  const tr = {
     step: 'intro',     // intro | show | try | mastered | action | teach | finish
+    phase: 'count',    // while trying: count -> go -> judged -> count …
+    count: 0,          // 1..3 while counting
     move: 0,           // index in ORDER
     good: 0,
     misses: 0,
     shown: false,      // tab visible
     practice: false,   // PRACTICE 1 sent
-    busyUntil: 0,      // ignore moves while the wizard reacts
-    teach: null,       // { move, slot }
+    armAt: 0,
+    goAt: 0,
+    teach: null,       // { move, slot, count }
     timer: 0,
+    gen: 0,            // bumps on every new step/cycle: stale timers do nothing
+    lastSay: null,     // [english text, vars, mood] to re-say on language change
   };
   const catcher = new MoveCatcher();
   let voiceOn = store.get('wizardVoice') !== '0';
 
   // ---------------------------------------------------------------- wizard
-  let poseTimer = 0, talkIdx = 0, typeTimer = 0;
-  function pose(name, ms = 0) {
+  let poseTimer = 0, poseK = 0, typeTimer = 0;
+  function pose(mood) {
     clearInterval(poseTimer);
-    $('#wizImg').src = art[name];
-    if (ms) poseTimer = setTimeout(rotate, ms);       // yes/no for a moment, then back to talking
-    else if (TALK.includes(name)) poseTimer = setInterval(nextTalk, 3800);
+    poseK++;
+    $('#wizImg').src = artFor(mood, poseK);
+    if (mood === 'yes' || mood === 'no') poseTimer = setTimeout(() => pose('talk'), 2400);
+    else if (mood === 'talk') poseTimer = setInterval(() => { poseK++; $('#wizImg').src = artFor('talk', poseK); }, 4200);
   }
-  function nextTalk() { talkIdx = (talkIdx + 1) % TALK.length; $('#wizImg').src = art[TALK[talkIdx]]; }
-  function rotate() { pose(TALK[talkIdx]); }
+  artReady.then(() => { $('#wizImg').src = artFor(tr.lastSay?.[2] || 'welcome', poseK); });
 
-  function say(text, p) {
-    if (p) pose(p, p === 'yes' || p === 'no' ? 2200 : 0);
+  // Speak one line; done() runs when it has been said (or after a fair reading time).
+  function speak(line, done) {
+    let finished = false;
+    const finish = () => { if (!finished) { finished = true; done?.(); } };
+    const fallback = setTimeout(finish, Math.max(900, line.length * 75));
+    if (voiceOn && hasSpeech() && tr.shown) {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(line);
+      const chosen = store.get(`wizardVoice_${lang}`);
+      const v = voicesFor(lang).find((x) => x.name === chosen) || bestVoice(lang);
+      u.lang = v?.lang || SPEECH_TAG[lang];
+      if (v) u.voice = v;
+      u.pitch = 0.88;
+      u.rate = 0.94;
+      u.onend = () => { clearTimeout(fallback); setTimeout(finish, 150); };
+      speechSynthesis.speak(u);
+    }
+  }
+
+  // say('English text', vars, mood, done): typed into the bubble and spoken.
+  function say(text, vars, mood, done) {
+    tr.lastSay = [text, vars, mood];
+    const line = t(text, vars);
+    if (mood) pose(mood);
     const el = $('#wizSay');
     clearInterval(typeTimer);
     el.textContent = '';
     let i = 0;
-    typeTimer = setInterval(() => { el.textContent = text.slice(0, ++i); if (i >= text.length) clearInterval(typeTimer); }, 18);
-    if (voiceOn && 'speechSynthesis' in window) {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      const v = speechSynthesis.getVoices().find((x) => /^en(-|_)GB/i.test(x.lang)) || speechSynthesis.getVoices().find((x) => /^en/i.test(x.lang));
-      if (v) u.voice = v;
-      u.pitch = 0.7;
-      u.rate = 0.95;
-      speechSynthesis.speak(u);
-    }
+    typeTimer = setInterval(() => { el.textContent = line.slice(0, ++i); if (i >= line.length) clearInterval(typeTimer); }, 18);
+    speak(line, done);
   }
-  function hush() { clearInterval(typeTimer); if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+  function hush() { clearInterval(typeTimer); if (hasSpeech()) speechSynthesis.cancel(); }
 
   $('#wizVoice').addEventListener('click', () => {
     voiceOn = !voiceOn;
@@ -81,161 +139,270 @@ export function initTraining(app) {
     if (!voiceOn) hush();
     renderVoice();
   });
-  function renderVoice() { $('#wizVoice').textContent = voiceOn ? '🔊 Voice on' : '🔈 Voice off'; }
+  $('#wizVoicePick').addEventListener('change', (e) => {
+    store.set(`wizardVoice_${lang}`, e.target.value);
+    speak(t('Hello, apprentice!'));
+  });
+  function renderVoice() {
+    $('#wizVoice').textContent = voiceOn ? `🔊 ${t('Voice on')}` : `🔈 ${t('Voice off')}`;
+    const pick = $('#wizVoicePick');
+    const vs = voicesFor(lang).filter((v) => !NOVELTY.test(v.name));
+    const chosen = store.get(`wizardVoice_${lang}`) || '';
+    const best = bestVoice(lang);
+    pick.innerHTML = `<option value="">${t('Best voice')}${best ? ` (${esc(best.name)})` : ''}</option>` +
+      vs.map((v) => `<option value="${esc(v.name)}" ${v.name === chosen ? 'selected' : ''}>${esc(v.name)}</option>`).join('');
+    pick.hidden = !voiceOn || !vs.length;
+  }
+  if (hasSpeech()) speechSynthesis.addEventListener?.('voiceschanged', renderVoice);
   renderVoice();
 
   // ---------------------------------------------------------------- practice mode
   function setPractice(on) {
-    on = on && t.shown && app.connected();
-    if (on === t.practice) return;
-    t.practice = on;
+    on = on && tr.shown && app.connected();
+    if (on === tr.practice) return;
+    tr.practice = on;
     app.send(`PRACTICE ${on ? 1 : 0}`);
   }
-  const practising = () => t.step === 'try' || t.step === 'show' || t.step === 'mastered';
+  const practising = () => tr.step === 'try' || tr.step === 'show' || tr.step === 'mastered';
 
   // ---------------------------------------------------------------- steps
-  const cur = () => ORDER[t.move];
-  const moveName = (m = cur()) => MOVES[m].name;
+  const cur = () => ORDER[tr.move];
+  const moveName = (m = cur()) => t(MOVES[m].name);
+  const wireName = (m) => ascii(t(MOVES[m].name)).replace(/[^A-Za-z0-9-]+/g, '');
+  const later = (fn, ms) => { const g = tr.gen; tr.timer = setTimeout(() => { if (g === tr.gen) fn(); }, ms); };
 
   function go(step) {
-    clearTimeout(t.timer);
-    t.step = step;
+    clearTimeout(tr.timer);
+    tr.gen++;
+    tr.step = step;
     setPractice(practising());
-    const m = cur();
+    const g = tr.gen;
+    const still = (fn) => () => { if (g === tr.gen) fn(); };
+    render();
     if (step === 'intro') {
-      say('Welcome, apprentice! I will teach you three spells. Pick up your wand and hold it like a pen, tip pointing forward. Ready?', 'welcome');
+      say('Welcome, apprentice! I will teach you three spells. Pick up your wand and hold it like a pen, tip pointing forward. Ready?', null, 'welcome');
     } else if (step === 'show') {
-      t.good = 0; t.misses = 0;
-      say(`Spell ${t.move + 1}: the ${moveName()}. ${MOVES[m].how} Watch me.`, 'talk2');
+      tr.good = 0; tr.misses = 0;
+      // Explain while the example plays once; "your turn" when both are done.
+      let spoke = false, played = false;
+      const next = () => { if (spoke && played) later(() => go('try'), 500); };
+      say('Spell {n}: the {name}. {how} Watch me.', { n: tr.move + 1, name: moveName(), how: t(MOVES[cur()].how) }, 'talk',
+        still(() => { spoke = true; next(); }));
+      setTimeout(still(() => {
+        playDemo();
+        setTimeout(still(() => { played = true; next(); }), demoMs(cur()) + 400);
+      }), 700);
     } else if (step === 'try') {
-      catcher.reset();
-      t.busyUntil = 0;
-      say(`Now you try. Do the ${moveName()}!`, 'talk1');
+      startCycle(true);
     } else if (step === 'mastered') {
-      const last = t.move === ORDER.length - 1;
-      say(last ? `Splendid! You have mastered all three spells. Now let us give them a purpose.`
-        : `Splendid! You have mastered the ${moveName()}. On to the next one.`, 'yes');
-      t.timer = setTimeout(() => { if (last) go('action'); else { t.move++; go('show'); } }, 3200);
+      const last = tr.move === ORDER.length - 1;
+      say(last ? 'Splendid! You have mastered all three spells. Now let us give them a purpose.'
+        : 'Splendid! You have mastered the {name}. On to the next one.', { name: moveName() }, 'yes',
+      still(() => later(() => { if (last) go('action'); else { tr.move++; go('show'); } }, 700)));
     } else if (step === 'action') {
-      say('A spell needs a purpose. Choose what each one does: the TV, the air conditioner, anything with a remote.', 'talk3');
+      say('A spell needs a purpose. Choose what each one does: the TV, the air conditioner, anything with a remote.', null, 'talk');
     } else if (step === 'finish') {
       store.set('wandTrained', '1');
-      say('Your training is complete! Point your wand at the TV and cast your spells. Come back whenever you want to practise.', 'welcome');
+      say('Your training is complete! Point your wand at the TV and cast your spells. Come back whenever you want to practise.', null, 'welcome');
     }
-    render();
   }
 
-  // ---------------------------------------------------------------- attempts
+  // ---------------------------------------------------------------- one attempt
+  // "Ready… one Circle… now!" (hold still) -> buzz on "now" -> ONE move ->
+  // hold still -> judged -> again. `lead` is said first (first try, or after
+  // moving too early / nothing seen).
+  function startCycle(first, lead) {
+    tr.gen++;
+    const g = tr.gen;
+    tr.phase = 'count';
+    tr.count = 0;
+    catcher.reset();
+    renderPhase();
+    const text = lead || (first ? 'Your turn.' : null);
+    if (text) say(text, { name: moveName() }, first ? 'talk' : null, () => { if (g === tr.gen) later(countNext, 250); });
+    else later(countNext, 300);
+  }
+  const BEATS = ['Ready…', 'one {name}…', 'now!'];
+  function countNext() {
+    if (tr.step !== 'try' || tr.phase !== 'count') return;
+    tr.count++;
+    const line = t(BEATS[tr.count - 1], { name: moveName() });
+    $('#wizSay').textContent = line;
+    if (tr.count < 3) {
+      renderPhase();
+      speak(line);
+      later(countNext, BEAT_MS);
+      return;
+    }
+    // "now!": buzz, watch for ONE move
+    speak(line);
+    tr.phase = 'go';
+    tr.armAt = Date.now() + ARM_DELAY;
+    tr.goAt = Date.now();
+    catcher.reset();
+    app.send('BUZZ 150');
+    renderPhase();
+  }
+
   function onFeature(row) {
-    if (t.step !== 'try') return;
+    if (tr.step !== 'try') return;
+    const now = Date.now();
+    if (tr.phase === 'count') {
+      if (tr.count > 0 && row[4] > MOVING_ENERGY) {  // moved before the buzz
+        startCycle(false, 'Wait for "now"! Hold still.');
+      }
+      return;
+    }
+    if (tr.phase !== 'go' || now < tr.armAt) return;
     const seg = catcher.push(row);
-    if (!seg || Date.now() < t.busyUntil) return;
+    if (!seg) {
+      if (!catcher.active && now - tr.goAt > GO_TIMEOUT) {
+        startCycle(false, 'I saw nothing.');
+      }
+      return;
+    }
     const m = measure(seg);
     const v = judge(cur(), m);
     app.log(`TRAIN ${cur()} ${v.ok ? 'YES' : 'NO (' + v.kind + ')'}: ${describe(m)}`);
-    t.busyUntil = Date.now() + 1500;
+    tr.phase = 'judged';
+    tr.gen++;
+    const g = tr.gen;
+    const next = () => later(() => { if (g === tr.gen) startCycle(false); }, 500);
     if (v.ok) {
-      t.good++; t.misses = 0;
-      app.send('BUZZ 120');
-      if (t.good >= NEEDED) return go('mastered');
-      say(`${v.say} ${t.good === NEEDED - 1 ? 'Once more!' : 'Do it again.'}`, 'yes');
+      tr.good++; tr.misses = 0;
+      if (tr.good >= NEEDED) { render(); return go('mastered'); }
+      say(tr.good === NEEDED - 1 ? '{verdict} Once more!' : '{verdict} Do it again.', { verdict: t(v.say) }, 'yes', next);
     } else {
-      t.misses++;
-      say(t.misses >= 4 ? `${v.say} Watch me once more.` : v.say, 'no');
-      if (t.misses >= 4) { t.misses = 0; replayDemo(); }
+      tr.misses++;
+      const replay = tr.misses >= 4;
+      if (replay) tr.misses = 0;
+      say(replay ? '{verdict} Watch me once more.' : '{verdict}', { verdict: t(v.say) }, 'no', next);
+      if (replay) setTimeout(playDemo, 300);
     }
     render();
   }
 
   // ---------------------------------------------------------------- action step
   const gestures = () => app.info()?.g || [];
-  const slotOf = (m) => gestures().findIndex((g) => (g.n || '').toLowerCase() === MOVES[m].name.toLowerCase());
-  const codeName = (c) => { const n = app.info()?.c?.[c]?.n; return n ? n.replace(/_/g, ' ') : `Code ${c + 1}`; };
+  const isMoveSlot = (g, m) => {
+    const names = allTranslations(MOVES[m].name).map((n) => ascii(n).replace(/[^A-Za-z0-9-]+/g, '').toLowerCase());
+    return names.includes((g?.n || '').replace(/_/g, '').toLowerCase());
+  };
+  const slotOf = (m) => gestures().findIndex((g) => isMoveSlot(g, m));
+  const codeName = (c) => { const n = app.info()?.c?.[c]?.n; return n ? n.replace(/_/g, ' ') : t('Code {n}', { n: c + 1 }); };
 
   function chooseAction(m) {
     let g = slotOf(m);
     if (g < 0) g = gestures().findIndex((x) => !x.c && !x.n);
     if (g < 0) g = gestures().findIndex((x) => !x.c);
-    if (g < 0) return say('All eight spell slots are taken. Clear one in the Spells tab first.', 'no');
+    if (g < 0) return say('All eight spell slots are taken. Clear one in the Spells tab first.', null, 'no');
     const s = gestures()[g];
-    if (s?.c >= 3 && (s.n || '').toLowerCase() === MOVES[m].name.toLowerCase()) return app.openLibrary({ spell: g });
+    if (s?.c >= 3 && isMoveSlot(s, m)) return app.openLibrary({ spell: g });
     // The wand recognizes spells from your own samples: let it watch 3 times.
-    t.teach = { move: m, slot: g, count: s && (s.n || '').toLowerCase() === MOVES[m].name.toLowerCase() ? s.c : 0 };
-    t.step = 'teach';
-    say(`Your wand must learn your own ${MOVES[m].name}. Do it three times, each time right after the wand buzzes "go".`, 'talk2');
-    app.send(`REC ${g} ${MOVES[m].name}`);
+    tr.teach = { move: m, slot: g, count: isMoveSlot(s, m) ? s.c : 0 };
+    tr.step = 'teach';
+    say('Your wand must learn your own {name}. Do it three times, each time right after the wand buzzes "go".', { name: moveName(m) }, 'talk');
+    app.send(`REC ${g} ${wireName(m)}`);
     render();
   }
 
   function onRec(g, what, count) {
-    if (t.step !== 'teach' || !t.teach || g !== t.teach.slot) return;
-    const name = MOVES[t.teach.move].name;
+    if (tr.step !== 'teach' || !tr.teach || g !== tr.teach.slot) return;
+    const m = tr.teach.move;
     if (what === 'ok') {
-      t.teach.count = count;
+      tr.teach.count = count;
       if (count >= NEEDED) {
-        const slot = t.teach.slot;
-        t.teach = null;
-        t.step = 'action';
-        say(`Your wand knows your ${name} now. Choose what it does.`, 'yes');
+        const slot = tr.teach.slot;
+        tr.teach = null;
+        tr.step = 'action';
+        say('Your wand knows your {name} now. Choose what it does.', { name: moveName(m) }, 'yes');
         render();
         setTimeout(() => app.openLibrary({ spell: slot }), 900);
         return;
       }
-      say(`Good, ${count} of ${NEEDED}. Again, after the buzz.`, 'yes');
+      say('Good, {n} of {total}. Again, after the buzz.', { n: count, total: NEEDED }, 'yes');
     } else if (what === 'timeout') {
-      say(`I saw nothing. Do the ${name} right after the buzz.`, 'no');
+      say('I saw nothing. Do the {name} right after the buzz.', { name: moveName(m) }, 'no');
     } else return;
     render();
-    setTimeout(() => { if (t.step === 'teach' && t.teach) app.send(`REC ${t.teach.slot} ${name}`); }, 1200);
+    setTimeout(() => { if (tr.step === 'teach' && tr.teach) app.send(`REC ${tr.teach.slot} ${wireName(m)}`); }, 1200);
   }
 
   // ---------------------------------------------------------------- render
+  // Example path: the spark goes round ONCE (↻ replays it); the arrow shows
+  // the direction.
   function demoSvg(m, big) {
-    return `<svg class="move-demo ${big ? 'big' : ''}" viewBox="0 0 100 100" aria-label="${esc(MOVES[m].name)} path">
-      <path d="${MOVES[m].path}" class="trail"/>
-      <circle r="5" class="spark"><animateMotion dur="${m === 'hit' ? 1.2 : 1.8}s" repeatCount="indefinite" path="${MOVES[m].path}"/></circle>
+    const path = MOVES[m].path, id = `arr-${m}-${big ? 'b' : 's'}`;
+    return `<svg class="move-demo ${big ? 'big' : ''}" viewBox="0 0 100 100" aria-label="${esc(t(MOVES[m].name))}">
+      <defs><marker id="${id}" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 Z" class="arrow"/></marker></defs>
+      <path d="${path}" class="trail" marker-end="url(#${id})"/>
+      ${big ? `<circle r="5" class="spark"><animateMotion dur="${demoMs(m) / 1000}s" begin="indefinite" fill="freeze" path="${path}"/></circle>` : ''}
     </svg>`;
   }
-  function replayDemo() {
-    const d = $('#trainArea .move-demo');
-    if (d) { d.classList.remove('pulse'); void d.offsetWidth; d.classList.add('pulse'); }
+  const demoMs = (m) => (m === 'hit' ? 1400 : 1800);
+  function playDemo() {
+    const svg = $('#trainArea .move-demo.big');
+    const anim = svg?.querySelector('animateMotion');
+    if (!anim) return;
+    svg.classList.add('playing');
+    try { anim.beginElement(); } catch { /* old browser: static path only */ }
   }
-  const stars = () => `<div class="stars" aria-label="${t.good} of ${NEEDED}">${Array.from({ length: NEEDED }, (_, k) => `<span class="${k < t.good ? 'on' : ''}">★</span>`).join('')}</div>`;
-  const pretend = () => (app.perform ? `<div class="pretend"><span class="muted small">Pretend wand:</span>
-      <button class="small" data-pretend="1">do it right</button><button class="small" data-pretend="0.33">too slow</button>
-      <button class="small" data-pretend="3">rushed</button><button class="small" data-pretend="wrong">wrong move</button></div>` : '');
+  const stars = () => `<div class="stars" aria-label="${tr.good} / ${NEEDED}">${Array.from({ length: NEEDED }, (_, k) => `<span class="${k < tr.good ? 'on' : ''}">★</span>`).join('')}</div>`;
+  const pretend = () => (app.perform ? `<div class="pretend"><span class="muted small">${t('Pretend wand:')}</span>
+      <button class="small" data-pretend="1">${t('do it right')}</button><button class="small" data-pretend="0.33">${t('too slow')}</button>
+      <button class="small" data-pretend="3">${t('rushed')}</button><button class="small" data-pretend="wrong">${t('wrong move')}</button></div>` : '');
+
+  // Ready… one Circle… now! (the current beat lit), then "reading".
+  function counter() {
+    const p = tr.phase;
+    const beat = p === 'count' ? tr.count : 3;
+    const cells = BEATS.map((b, i) => {
+      const n = i + 1, cls = p === 'go' && n === 3 ? 'now go' : beat === n ? 'now' : beat > n ? 'past' : '';
+      return `<li class="${cls}">${esc(t(b, { name: moveName() }))}</li>`;
+    }).join('');
+    const hint = p === 'count' ? t('Hold still until "now".') : p === 'go' ? t('Do ONE move, then hold still.') : `⏸ ${t('Reading your move…')}`;
+    return `<div class="counter" data-phase="${p}"><ol>${cells}</ol><p class="muted small">${esc(hint)}</p></div>`;
+  }
+  function renderPhase() {
+    const c = $('#trainArea .counter');
+    if (c) c.outerHTML = counter();
+    $('#trainArea').dataset.phase = tr.step === 'try' ? tr.phase : '';
+  }
 
   function render() {
     const area = $('#trainArea');
     const m = cur();
-    const progress = `<ol class="train-steps">${ORDER.map((x, i) => `<li class="${i < t.move || ['action', 'teach', 'finish'].includes(t.step) ? 'done' : i === t.move && practising() ? 'now' : ''}">${MOVES[x].name}</li>`).join('')}
-      <li class="${t.step === 'finish' ? 'done' : ['action', 'teach'].includes(t.step) ? 'now' : ''}">Actions</li></ol>`;
+    const progress = `<ol class="train-steps">${ORDER.map((x, i) => `<li class="${i < tr.move || ['action', 'teach', 'finish'].includes(tr.step) ? 'done' : i === tr.move && practising() ? 'now' : ''}">${esc(t(MOVES[x].name))}</li>`).join('')}
+      <li class="${tr.step === 'finish' ? 'done' : ['action', 'teach'].includes(tr.step) ? 'now' : ''}">${t('Actions')}</li></ol>`;
     let html = '';
     if (!app.connected()) {
-      html = `<p class="muted">Summon your wand to begin.</p>`;
-    } else if (t.step === 'intro') {
-      html = `<button class="primary big" data-act="begin">Begin training</button>
-        <button class="small" data-act="skip-to-action">I know the moves: go to actions</button>`;
-    } else if (t.step === 'show') {
-      html = `${demoSvg(m, true)}<button class="primary big" data-act="try">I'm ready</button>`;
-    } else if (t.step === 'try' || t.step === 'mastered') {
-      html = `<div class="try-row">${demoSvg(m, false)}<div>${stars()}<p class="muted small">${t.step === 'try' ? 'Watching your wand…' : ''}</p></div></div>
-        ${t.step === 'try' ? `${pretend()}<button class="small linkish" data-act="skip">Skip this spell</button>` : ''}`;
-    } else if (t.step === 'action' || t.step === 'teach') {
+      html = `<p class="muted">${t('Summon your wand to begin.')}</p>`;
+    } else if (tr.step === 'intro') {
+      html = `<button class="primary big" data-act="begin">${t('Begin training')}</button>
+        <button class="small linkish" data-act="skip-to-action">${t('I know the moves: go to actions')}</button>`;
+    } else if (tr.step === 'show') {
+      html = demoSvg(m, true);
+    } else if (tr.step === 'try' || tr.step === 'mastered') {
+      html = `<div class="try-row">${demoSvg(m, false)}<div>${stars()}</div></div>
+        ${tr.step === 'try' ? `${counter()}${pretend()}<div class="row"><button class="small" data-act="replay">↻ ${t('Show me again')}</button>
+        <button class="small linkish" data-act="skip">${t('Skip this spell')}</button></div>` : ''}`;
+    } else if (tr.step === 'action' || tr.step === 'teach') {
       html = `<div class="action-list">${ORDER.map((x) => {
         const g = slotOf(x), s = gestures()[g];
-        const b = s && s.b >= 0 ? `sends “${esc(codeName(s.b))}”` : s?.c >= 3 ? 'no action yet' : 'not on the wand yet';
-        const teaching = t.step === 'teach' && t.teach?.move === x;
+        const b = s && s.b >= 0 ? t('sends “{code}”', { code: esc(codeName(s.b)) }) : s?.c >= 3 ? t('no action yet') : t('not on the wand yet');
+        const teaching = tr.step === 'teach' && tr.teach?.move === x;
         return `<div class="action-row ${teaching ? 'teaching' : ''}">${demoSvg(x, false)}
-          <div><b>${MOVES[x].name}</b><div class="muted small">${teaching ? `wand learning: ${t.teach.count} of ${NEEDED}` : b}</div></div>
-          <button class="small primary" data-act="choose" data-move="${x}" ${t.step === 'teach' ? 'disabled' : ''}>${s?.b >= 0 ? 'Change' : 'Choose action'}</button>
+          <div><b>${esc(t(MOVES[x].name))}</b><div class="muted small">${teaching ? t('wand learning: {n} of {total}', { n: tr.teach.count, total: NEEDED }) : b}</div></div>
+          <button class="small primary" data-act="choose" data-move="${x}" ${tr.step === 'teach' ? 'disabled' : ''}>${s?.b >= 0 ? t('Change') : t('Choose action')}</button>
         </div>`;
       }).join('')}</div>
-      <button class="primary" data-act="finish" ${t.step === 'teach' ? 'disabled' : ''}>Finish training</button>`;
-    } else if (t.step === 'finish') {
-      html = `<button class="primary" data-act="restart">Practise again</button>`;
+      <button class="primary" data-act="finish" ${tr.step === 'teach' ? 'disabled' : ''}>${t('Finish training')}</button>`;
+    } else if (tr.step === 'finish') {
+      html = `<button class="primary" data-act="restart">${t('Practise again')}</button>`;
     }
     area.innerHTML = progress + html;
+    area.dataset.phase = tr.step === 'try' ? tr.phase : '';
   }
 
   $('#trainArea').addEventListener('click', (e) => {
@@ -248,13 +415,20 @@ export function initTraining(app) {
       return;
     }
     const act = b.dataset.act;
-    if (act === 'begin') { t.move = 0; go('show'); }
-    else if (act === 'try') go('try');
-    else if (act === 'skip') { t.good = NEEDED; go('mastered'); }
+    if (act === 'begin') { tr.move = 0; go('show'); }
+    else if (act === 'replay') {  // show the example again, then count again
+      tr.gen++;
+      tr.phase = 'count'; tr.count = 0;
+      render();
+      $('#trainArea .try-row .move-demo').outerHTML = demoSvg(cur(), true);
+      playDemo();
+      later(() => startCycle(false), 2200);
+    }
+    else if (act === 'skip') { tr.good = NEEDED; go('mastered'); }
     else if (act === 'skip-to-action') go('action');
     else if (act === 'choose') chooseAction(b.dataset.move);
     else if (act === 'finish') go('finish');
-    else if (act === 'restart') { t.move = 0; go('intro'); }
+    else if (act === 'restart') { tr.move = 0; go('intro'); }
   });
 
   // ---------------------------------------------------------------- hooks from app.js
@@ -262,17 +436,28 @@ export function initTraining(app) {
     onLine(tag, p) {
       if (tag === 'F') onFeature(p.slice(0, 5).map(Number));
       else if (tag === 'REC') onRec(+p[0], p[1], +p[2]);
-      else if (tag === 'INFO' && (t.step === 'action' || t.step === 'teach')) render();
+      else if (tag === 'INFO' && (tr.step === 'action' || tr.step === 'teach')) render();
     },
     onShown(shown) {
-      t.shown = shown;
-      if (!shown) hush();
-      else if (!$('#wizSay').textContent) go(t.step);
+      const was = tr.shown;
+      tr.shown = shown;
+      if (!shown) { hush(); tr.gen++; if (tr.step === 'try') { tr.phase = 'count'; tr.count = 0; } }
+      else if (!was) {
+        if (tr.step === 'try') startCycle(true);
+        else if (tr.step === 'show') go('show');
+        else if (tr.lastSay) say(...tr.lastSay);
+        else go(tr.step);
+      }
       setPractice(practising());
       if (shown) render();
     },
-    onConnect() { t.practice = false; render(); setPractice(practising()); },
-    onDisconnect() { t.practice = false; if (t.step === 'teach') { t.teach = null; t.step = 'action'; } render(); },
+    onLang() {
+      renderVoice();
+      render();
+      if (tr.lastSay && tr.step !== 'try') say(...tr.lastSay);
+    },
+    onConnect() { tr.practice = false; render(); setPractice(practising()); },
+    onDisconnect() { tr.practice = false; tr.gen++; if (tr.step === 'teach') { tr.teach = null; tr.step = 'action'; } render(); },
     firstTime: () => store.get('wandTrained') !== '1',
   };
 }

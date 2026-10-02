@@ -213,7 +213,7 @@ export const LIBRARY = {
     'Any remote (learn)': {
       short: 'Dev',
       note: 'Projectors, soundbars, fans, set-top boxes… copy any button from its remote.',
-      actions: Array.from({ length: 6 }, (_, k) => ({ label: `Button ${k + 1}`, short: `Btn${k + 1}`, ...learn })),
+      actions: Array.from({ length: 6 }, (_, k) => ({ label: 'Button {n}', vars: { n: k + 1 }, short: `Btn${k + 1}`, ...learn })),
     },
   },
 };

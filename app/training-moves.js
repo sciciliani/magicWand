@@ -13,18 +13,18 @@
 export const MOVES = {
   circle: {
     name: 'Circle',
-    how: 'Draw a big circle in the air with the tip of the wand, nice and round, about one second.',
+    how: 'Draw ONE big circle in the air with the tip of the wand, nice and round, in about one second.',
     path: 'M50 14 A36 36 0 1 1 49.9 14',
   },
   hit: {
     name: 'Hit',
-    how: 'A quick snap: tip up, and straight back down. Fast!',
-    path: 'M50 82 L50 18 L50 82',
+    how: 'ONE quick snap: tip up, and straight back down. Fast!',
+    path: 'M42 86 L50 16 L58 86',
   },
   zigzag: {
     name: 'ZigZag',
     how: 'Side to side, fast: right, left, right. Keep the tip level.',
-    path: 'M14 50 L86 50 L14 50 L86 50',
+    path: 'M12 32 L88 42 L12 56 L88 68',
   },
 };
 
@@ -36,9 +36,11 @@ export const TUNE = {
   stopHold: 10,      // 400 ms of calm (a slow zigzag pauses at each end)
   minPath: 15,       // shorter tip paths (deg) are just jitter
   maxDur: 4,         // longer = not one move
-  circle: { minTurn: 270, almostTurn: 150, minRound: 0.3, slow: 1.5, minPeak: 150, fast: 0.5 },
-  hit: { vsSide: 1.8, slow: 0.6, minPeak: 120, fast: 0.12 },
-  zigzag: { vsUp: 1.5, minRev: 2, slow: 1.5, minPeak: 150, fast: 0.3 },
+  // slow/fast compare the move's core (where the tip is above a third of
+  // its top speed), not the wobble after a hard stop.
+  circle: { minTurn: 270, almostTurn: 150, minRound: 0.3, slow: 1.5, minPeak: 150, fast: 0.45 },
+  hit: { vsSide: 1.8, slow: 0.6, minPeak: 200, fast: 0.08 },
+  zigzag: { vsUp: 1.5, minRev: 2, slow: 1.5, minPeak: 150, fast: 0.25 },
 };
 
 const DT = 1 / 25;
@@ -86,6 +88,7 @@ export function measure(raw) {
   const seg = despike(raw);
   let path = 0, side = 0, up = 0, twist = 0, thrust = 0, peak = 0, peakUp = 0, turn = 0;
   let x = 0, y = 0, minX = 0, maxX = 0, minY = 0, maxY = 0, lastA = null, rSign = 0, uSign = 0, rRev = 0, uRev = 0;
+  const speeds = seg.map(([r, u]) => Math.hypot(r * K, u * K));
   for (const [r, u, t, th] of seg) {
     const vr = r * K, vu = u * K, s = Math.hypot(vr, vu);
     path += s * DT; side += Math.abs(vr) * DT; up += Math.abs(vu) * DT;
@@ -106,8 +109,10 @@ export function measure(raw) {
     if (Math.abs(vu) > 40) { const sg = Math.sign(vu); if (uSign && sg !== uSign) uRev++; uSign = sg; }
   }
   const w = maxX - minX, h = maxY - minY;
+  const core = speeds.map((v, i) => (v >= peak * 0.35 ? i : -1)).filter((i) => i >= 0);
+  const active = core.length ? (core[core.length - 1] - core[0] + 1) * DT : 0;
   return {
-    dur: seg.length * DT, path, side, up, twist, thrust, peak, peakUp,
+    dur: seg.length * DT, active, path, side, up, twist, thrust, peak, peakUp,
     turn: Math.abs(turn) * 180 / Math.PI, round: Math.min(w, h) / Math.max(w, h, 1e-6),
     rRev, uRev, tooLong: !!raw.tooLong,
   };
@@ -121,34 +126,34 @@ export function judge(target, m) {
     : m.thrust * 150 > m.path ? 'That was a poke forward. Move the tip through the air instead.' : null;
   if (m.tooLong) return no('faster', 'Too slow, I lost track. One quick, clean move.');
   if (target === 'circle') {
-    if (m.dur > T.slow || m.peak < T.minPeak) return no('faster', 'Faster! A circle takes about one second.');
+    if (m.active > T.slow || m.peak < T.minPeak) return no('faster', 'Faster! A circle takes about one second.');
     if (wrongKind) return no('shape', wrongKind);
     if (m.turn < T.minTurn || m.round < T.minRound) {
       if (m.up > m.side * 2) return no('shape', 'That went up and down. Draw a round loop instead.');
       if (m.side > m.up * 2) return no('shape', 'That went side to side. Draw a round loop instead.');
-      if (m.dur < T.fast) return no('slower', 'Slower, and nice and round.');
+      if (m.active < T.fast) return no('slower', 'Slower, and nice and round.');
       if (m.turn >= T.almostTurn) return no('shape', 'Almost! Close the circle all the way round.');
       return no('shape', 'Draw a round loop with the tip.');
     }
-    if (m.dur < T.fast) return no('slower', 'Slower! Draw it calmly.');
+    if (m.active < T.fast) return no('slower', 'Slower! Draw it calmly.');
     return { ok: true, kind: 'yes', say: 'Yes! A fine circle.' };
   }
   if (target === 'hit') {
-    if (m.dur > T.slow || m.peakUp < T.minPeak) return no('faster', 'Faster! A quick snap, like cracking a whip.');
+    if (m.active > T.slow || m.peak < T.minPeak) return no('faster', 'Faster! A quick snap, like cracking a whip.');
     if (wrongKind) return no('shape', wrongKind);
     if (m.side * T.vsSide > m.up) return no('shape', 'Up and down only, not sideways.');
     if (m.uRev < 1) return no('shape', 'Up, and straight back down.');
     if (m.turn >= TUNE.circle.minTurn) return no('shape', 'That was a loop. Just up and down.');
-    if (m.dur < T.fast) return no('slower', 'A little slower, a clear up and down.');
+    if (m.active < T.fast) return no('slower', 'A little slower, a clear up and down.');
     return { ok: true, kind: 'yes', say: 'Yes! A clean hit.' };
   }
   if (target === 'zigzag') {
-    if (m.dur > T.slow || m.peak < T.minPeak) return no('faster', 'Faster! Snap side to side.');
+    if (m.active > T.slow || m.peak < T.minPeak) return no('faster', 'Faster! Snap side to side.');
     if (wrongKind) return no('shape', wrongKind);
     if (m.up * T.vsUp > m.side) return no('shape', 'Side to side, keep the tip level.');
     if (m.turn >= TUNE.circle.minTurn) return no('shape', 'That was a loop. Straight strokes: right, left, right.');
     if (m.rRev < T.minRev) return no('shape', 'More zigs: right, left, right.');
-    if (m.dur < T.fast) return no('slower', 'A bit slower, three clear strokes.');
+    if (m.active < T.fast) return no('slower', 'A bit slower, three clear strokes.');
     return { ok: true, kind: 'yes', say: 'Yes! A sharp zigzag.' };
   }
   return no('shape', 'Hmm.');
@@ -156,6 +161,6 @@ export function judge(target, m) {
 
 // One line for the Log tab.
 export function describe(m) {
-  return `dur ${m.dur.toFixed(2)}s peak ${m.peak | 0}°/s path ${m.path | 0}° side ${m.side | 0} up ${m.up | 0} ` +
+  return `dur ${m.dur.toFixed(2)}s core ${m.active.toFixed(2)}s peak ${m.peak | 0}°/s path ${m.path | 0}° side ${m.side | 0} up ${m.up | 0} ` +
     `turn ${m.turn | 0}° round ${m.round.toFixed(2)} revR ${m.rRev} revU ${m.uRev}`;
 }

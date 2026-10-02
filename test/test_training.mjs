@@ -19,6 +19,22 @@ function catchMove(rows) {
   return best;
 }
 
+// A real hard snap doesn't stop dead: the wand wobbles for half a second.
+// Same hits with that wobble appended must still be accepted.
+for (const d of data.filter((x) => x.move === 'hit' && x.kind === 'ok')) {
+  const rows = d.f.map((r) => r.slice());
+  let last = rows.length - 1;
+  while (last > 0 && rows[last][4] < 40) last--;
+  const peak = Math.max(...rows.map((r) => Math.abs(r[1])));
+  const wob = [];
+  for (let i = 0; i < 14; i++) {
+    const a = peak * 0.35 * Math.exp(-i / 5) * (i % 2 ? -1 : 1);
+    wob.push([Math.round(a * 0.3), Math.round(a), 0, 0, Math.round(Math.abs(a) * 1.5)]);
+  }
+  rows.splice(last + 1, 0, ...wob);
+  data.push({ move: 'hit', kind: 'wobble', f: rows });
+}
+
 const stats = {};
 const bump = (k, ok) => { stats[k] ??= [0, 0]; stats[k][0] += ok ? 1 : 0; stats[k][1]++; };
 for (const d of data) {
@@ -28,6 +44,10 @@ for (const d of data) {
       const v = seg && judge(target, measure(seg));
       bump(`${target}: done right -> yes`, v?.ok);
       if (verbose && !v?.ok) console.log('   ', target, v?.say, seg && describe(measure(seg)));
+    } else if (d.kind === 'wobble' && d.move === target) {
+      const v = seg && judge(target, measure(seg));
+      bump(`${target}: hard snap + wobble -> yes`, v?.ok);
+      if (verbose && !v?.ok) console.log('   wobble', v?.say, seg && describe(measure(seg)));
     } else if (d.kind === 'slow' && d.move === target) {
       const v = seg && judge(target, measure(seg));
       bump(`${target}: done 3x slower -> "faster"`, v?.kind === 'faster');
@@ -43,7 +63,7 @@ for (const d of data) {
     }
   }
 }
-const need = { 'done right': 0.9, 'slower"': 0.85, 'faster"': 0.85, rejected: 0.95 };
+const need = { 'wobble -> yes': 0.9, 'done right': 0.9, 'slower"': 0.85, 'faster"': 0.85, rejected: 0.95 };
 for (const [k, [ok, n]] of Object.entries(stats)) {
   const min = Object.entries(need).find(([key]) => k.includes(key))[1];
   check(ok / n >= min, `${k}: ${ok}/${n} (need ${Math.round(min * 100)}%)`);

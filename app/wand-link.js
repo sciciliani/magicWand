@@ -10,6 +10,8 @@ const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // wand -> app (notify)
 // only accepts one packet per write (MTU 23).
 let CHUNK = 180;
 
+import { t } from './i18n.js?v=1';
+
 export const bluetoothAvailable = () => !!navigator.bluetooth;
 
 /** Wands this browser was allowed to use before (Chrome keeps the permission). */
@@ -21,7 +23,7 @@ export async function knownWands() {
 }
 
 const withTimeout = (p, ms, what) =>
-  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out`)), ms))]);
+  Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(t('{what} timed out', { what }))), ms))]);
 
 export class BleWand {
   /** device: a BluetoothDevice to reconnect to, or null to show Chrome's chooser. */
@@ -41,32 +43,32 @@ export class BleWand {
   /** progress(text) is called at each step, so the UI can show where it stops. */
   async connect(progress = () => {}) {
     if (!this.device) {
-      progress('Opening Chrome’s wand list…');
+      progress(t('Opening Chrome’s wand list…'));
       this.device = await navigator.bluetooth.requestDevice({
         filters: [{ namePrefix: 'Wand' }, { services: [NUS] }],
         optionalServices: [NUS],
       });
     }
     this.name = this.device.name || 'Wand';
-    progress(`Connecting to ${this.name}…`);
+    progress(t('Connecting to {name}…', { name: this.name }));
     if (!this._listening) {
       this.device.addEventListener('gattserverdisconnected', () => this._close());
       this._listening = true;
     }
-    const server = await withTimeout(this.device.gatt.connect(), 10000, 'Connecting');
-    progress('Connected. Looking for the wand service…');
+    const server = await withTimeout(this.device.gatt.connect(), 10000, t('Connecting'));
+    progress(t('Connected. Looking for the wand service…'));
     let svc;
     try {
       svc = await server.getPrimaryService(NUS);
     } catch (e) {
-      throw new Error(`the wand's text service wasn't found (${e.message}). Restart the wand and try again`);
+      throw new Error(t("the wand's text service wasn't found ({why}). Restart the wand and try again", { why: e.message }));
     }
-    progress('Opening the channel…');
+    progress(t('Opening the channel…'));
     this.rx = await svc.getCharacteristic(NUS_RX);
     this.tx = await svc.getCharacteristic(NUS_TX);
     this.tx.addEventListener('characteristicvaluechanged', (e) => this._onData(e.target.value));
     await this.tx.startNotifications();
-    progress('Channel open. Saying hello…');
+    progress(t('Channel open. Saying hello…'));
   }
 
   disconnect() { this.device?.gatt?.connected && this.device.gatt.disconnect(); }

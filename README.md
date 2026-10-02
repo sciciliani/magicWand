@@ -98,17 +98,30 @@ Keep it empty.
 
 ## Training (the wizard)
 
-The **Training** tab opens by itself the first time a wand connects. A wizard teaches three fixed moves,
-checks every attempt from the wand's motion stream and says what to fix ("Faster!", "Slower", "Side to side"):
+The **Training** tab opens by itself the first time a wand connects. A wizard teaches three fixed moves:
 
-1. **Circle**: a full loop with the tip, about one second.
-2. **Hit**: a quick snap up and straight back down.
+1. **Circle**: ONE full loop with the tip, about one second.
+2. **Hit**: ONE quick snap up and straight back down.
 3. **ZigZag**: side to side, fast: right, left, right.
 
-Three good attempts per move, then each move gets an action from the remote library. If the wand doesn't know
-a move yet, it watches you do it three times first (the same as recording in the Spells tab). While you
-practise, the wand is in `PRACTICE` mode: moves never send IR. The numbers of every attempt are in the Log tab
-(`TRAIN …`); the limits are in `TUNE` at the top of `app/training-moves.js`. Wizard art: see `app/wizard/README.md`.
+For each move he explains it while the example path plays once (↻ replays it). Every attempt then goes
+"**Ready… one Circle… now!**": hold still until "now", the wand buzzes, do ONE move and hold still. He reads
+it and says what to fix ("Faster!", "Slower", "Up and down only"). Three good ones per move, then each move
+gets an action from the remote library. If the wand doesn't know a move yet, it watches you do it three times
+first (the same as recording in the Spells tab). While you practise, the wand is in `PRACTICE` mode: moves
+never send IR. The numbers of every attempt are in the Log tab (`TRAIN …`); the limits are in `TUNE` at the
+top of `app/training-moves.js`.
+
+Art: `app/wizard/*.png` (the wizard) and `app/scenes/*.jpg` (backgrounds), see `app/wizard/README.md`.
+
+## Languages
+
+The site follows the browser's language: English, Spanish, Portuguese, Italian or German. The picker in the
+header (and in the "Summon your wand" window) overrides it. The wizard speaks the same language with the best
+voice the computer has; 🔊 turns him off and the list next to it picks another voice.
+
+English text is the key: `t('Some text')` in the code, `data-i18n` in `index.html`, translations in
+`app/lang/<code>.js`. `make test` fails if any text is missing a translation.
 
 ## Arduino IDE setup
 

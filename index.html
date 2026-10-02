@@ -7,40 +7,42 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="app/style.css?v=16" />
+  <link rel="stylesheet" href="app/style.css?v=17" />
 </head>
 <body>
   <header>
     <div class="brand">
       <span class="logo" aria-hidden="true">✦</span>
       <div>
-        <h1>Wand Workshop</h1>
+        <h1 data-i18n>Wand Workshop</h1>
         <p id="status" class="muted">No wand connected</p>
       </div>
     </div>
     <div class="header-actions">
-      <button id="connectBtn">Release wand</button>
+      <select class="lang-pick" aria-label="Language" data-i18n-title="Language"></select>
+      <button id="connectBtn" data-i18n>Release wand</button>
     </div>
   </header>
 
   <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="training">Training</button>
-    <button role="tab" data-tab="live" aria-selected="true">Live</button>
-    <button role="tab" data-tab="spells">Spells</button>
-    <button role="tab" data-tab="codes">IR codes</button>
-    <button role="tab" data-tab="settings">Settings</button>
-    <button role="tab" data-tab="log">Log</button>
+    <button role="tab" data-tab="training" data-i18n>Training</button>
+    <button role="tab" data-tab="live" aria-selected="true" data-i18n>Live</button>
+    <button role="tab" data-tab="spells" data-i18n>Spells</button>
+    <button role="tab" data-tab="codes" data-i18n>IR codes</button>
+    <button role="tab" data-tab="settings" data-i18n>Settings</button>
+    <button role="tab" data-tab="log" data-i18n>Log</button>
   </nav>
 
   <main>
     <!-- TRAINING ---------------------------------------------------------->
     <section id="tab-training" class="tab" hidden>
       <div class="card wizard-stage">
-        <div class="wizard-figure"><img id="wizImg" alt="The wizard" /></div>
+        <div class="wizard-figure"><img id="wizImg" alt="The wizard" data-i18n-alt="The wizard" /></div>
         <div class="wizard-talk">
           <div class="speech"><p id="wizSay"></p></div>
           <div id="trainArea" class="train-area"></div>
           <div class="row wizard-controls">
+            <select id="wizVoicePick" class="small" aria-label="Voice" data-i18n-title="Wizard's voice"></select>
             <button id="wizVoice" class="small"></button>
           </div>
         </div>
@@ -51,22 +53,22 @@
     <section id="tab-live" class="tab">
       <div class="card">
         <div class="card-head">
-          <h2>Motion</h2>
+          <h2 data-i18n>Motion</h2>
           <div class="legend">
-            <span class="k1">tip right</span><span class="k2">tip up</span>
-            <span class="k3">twist</span><span class="k4">thrust</span>
+            <span class="k1" data-i18n>tip right</span><span class="k2" data-i18n>tip up</span>
+            <span class="k3" data-i18n>twist</span><span class="k4" data-i18n>thrust</span>
           </div>
         </div>
         <canvas id="plot" height="220"></canvas>
-        <p class="muted small">These four signals are the same whichever way you grip the wand.</p>
+        <p class="muted small" data-i18n>These four signals are the same whichever way you grip the wand.</p>
       </div>
       <div class="grid2">
         <div class="card">
-          <h2>Last spell</h2>
-          <div id="lastCast" class="last-cast muted">Wave the wand…</div>
+          <h2 data-i18n>Last spell</h2>
+          <div id="lastCast" class="last-cast muted" data-i18n>Wave the wand…</div>
         </div>
         <div class="card">
-          <h2>Recent moves</h2>
+          <h2 data-i18n>Recent moves</h2>
           <ol id="history" class="history"></ol>
         </div>
       </div>
@@ -74,20 +76,19 @@
 
     <!-- SPELLS ------------------------------------------------------------>
     <section id="tab-spells" class="tab" hidden>
-      <div class="card intro">
-        <h2>Teach the wand a move</h2>
+      <div class="card intro scene-wands">
+        <h2 data-i18n>Teach the wand a move</h2>
         <ol class="steps">
-          <li>Pick a slot and give it a name (or tap a suggested spell).</li>
-          <li>Press <b>Record</b>. The wand ticks twice and buzzes "go": do the move once.</li>
-          <li>Repeat 3 times. Change your grip between takes, it makes the wand more forgiving.</li>
-          <li>Choose which IR code the move sends.</li>
+          <li data-i18n>Pick a slot and give it a name (or tap a suggested spell).</li>
+          <li data-i18n>Press <b>Record</b>. The wand ticks twice and buzzes "go": do the move once.</li>
+          <li data-i18n>Repeat 3 times. Change your grip between takes, it makes the wand more forgiving.</li>
+          <li data-i18n>Choose which IR code the move sends.</li>
         </ol>
       </div>
       <div id="spellGrid" class="spell-grid"></div>
       <details class="card">
-        <summary><h2>Suggested moves</h2></summary>
-        <p class="muted">Designed to work in any grip. Directions are from your point of view: "up" means up
-          toward the ceiling, "right" means to your right while pointing at the TV.</p>
+        <summary><h2 data-i18n>Suggested moves</h2></summary>
+        <p class="muted" data-i18n>Designed to work in any grip. Directions are from your point of view: "up" means up toward the ceiling, "right" means to your right while pointing at the TV.</p>
         <div id="suggestions" class="suggestions"></div>
       </details>
     </section>
@@ -95,9 +96,8 @@
     <!-- CODES ------------------------------------------------------------->
     <section id="tab-codes" class="tab" hidden>
       <div class="card intro">
-        <h2>IR codes</h2>
-        <p class="muted">Two ways to fill a slot: <b>Learn</b> copies a button from your own remote (hold it near the
-          wand's tip; works for air conditioners too), or <b>Library</b> picks a known code by device and brand.</p>
+        <h2 data-i18n>IR codes</h2>
+        <p class="muted" data-i18n>Two ways to fill a slot: <b>Learn</b> copies a button from your own remote (hold it near the wand's tip; works for air conditioners too), or <b>Library</b> picks a known code by device and brand.</p>
       </div>
       <div id="codeList" class="code-list"></div>
     </section>
@@ -105,56 +105,56 @@
     <!-- SETTINGS ---------------------------------------------------------->
     <section id="tab-settings" class="tab" hidden>
       <div class="card form">
-        <h2>Your wand</h2>
-        <label>Name
+        <h2 data-i18n>Your wand</h2>
+        <label><span data-i18n>Name</span>
           <div class="row"><span class="muted">Wand-</span><input id="wandName" maxlength="11" placeholder="XXXX" />
-            <button id="renameBtn">Rename</button></div>
-          <span class="hint">Letters, numbers and dashes, up to 11. Empty = the factory name. The Bluetooth list shows it as Wand-&lt;name&gt;.</span>
+            <button id="renameBtn" data-i18n>Rename</button></div>
+          <span class="hint" data-i18n>Letters, numbers and dashes, up to 11. Empty = the factory name. The Bluetooth list shows it as Wand-&lt;name&gt;.</span>
         </label>
       </div>
       <div class="card form">
-        <h2>Recognition</h2>
-        <label>Strictness <output id="thrOut"></output>
+        <h2 data-i18n>Recognition</h2>
+        <label><span data-i18n>Strictness</span> <output id="thrOut"></output>
           <input type="range" id="thr" min="0.25" max="0.9" step="0.05" />
-          <span class="hint">Left = strict (fewer accidental casts). Right = forgiving.</span>
+          <span class="hint" data-i18n>Left = strict (fewer accidental casts). Right = forgiving.</span>
         </label>
         <div class="row">
-          <button id="calBtn">Calibrate wand direction</button>
-          <span class="hint">Only needed if the board is mounted differently. Hold the tip straight up for 1 s.</span>
+          <button id="calBtn" data-i18n>Calibrate wand direction</button>
+          <span class="hint" data-i18n>Only needed if the board is mounted differently. Hold the tip straight up for 1 s.</span>
         </div>
       </div>
       <div class="card form">
-        <h2>Power</h2>
-        <label>Sleep after <output id="sleepOut"></output>
+        <h2 data-i18n>Battery &amp; sleep</h2>
+        <label><span data-i18n>Sleep after</span> <output id="sleepOut"></output>
           <input type="range" id="sleep" min="10" max="300" step="5" />
-          <span class="hint">No motion for this long puts the wand in deep sleep. Picking it up wakes it. It never sleeps while this app is connected: use Sleep now to put it to sleep.</span>
+          <span class="hint" data-i18n>No motion for this long puts the wand in deep sleep. Picking it up wakes it. It never sleeps while this app is connected: use Sleep now to put it to sleep.</span>
         </label>
-        <label>Wake sensitivity <output id="wakeOut"></output>
+        <label><span data-i18n>Wake sensitivity</span> <output id="wakeOut"></output>
           <input type="range" id="wake" min="1" max="12" step="1" />
-          <span class="hint">How much the wand must be tilted to wake up: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Higher ignores table bumps.</span>
+          <span class="hint" data-i18n>How much the wand must be tilted to wake up: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Higher ignores table bumps.</span>
         </label>
-        <label class="toggle"><input type="checkbox" id="haptics" /> <span>Vibration feedback</span></label>
+        <label class="toggle"><input type="checkbox" id="haptics" /> <span data-i18n>Vibration feedback</span></label>
         <div class="row">
-          <button id="buzzBtn">Test vibration</button>
-          <button id="sleepBtn">Sleep now</button>
+          <button id="buzzBtn" data-i18n>Test vibration</button>
+          <button id="sleepBtn" data-i18n>Sleep now</button>
         </div>
       </div>
       <div class="card form danger">
-        <h2>Danger zone</h2>
+        <h2 data-i18n>Danger zone</h2>
         <div class="row">
-          <button id="exportBtn">Back up IR codes</button>
-          <button id="resetBtn" class="danger">Factory reset</button>
+          <button id="exportBtn" data-i18n>Back up IR codes</button>
+          <button id="resetBtn" class="danger" data-i18n>Factory reset</button>
         </div>
       </div>
-      <div class="card"><h2>Device</h2><pre id="deviceInfo" class="muted small">—</pre></div>
+      <div class="card"><h2 data-i18n>Device</h2><pre id="deviceInfo" class="muted small">—</pre></div>
     </section>
 
     <!-- LOG --------------------------------------------------------------->
     <section id="tab-log" class="tab" hidden>
       <div class="card">
         <form id="cmdForm" class="row">
-          <input id="cmdInput" placeholder="Raw command, e.g. HELLO or SEND 0" autocomplete="off" />
-          <button>Send</button>
+          <input id="cmdInput" placeholder="Raw command, e.g. HELLO or SEND 0" data-i18n-placeholder="Raw command, e.g. HELLO or SEND 0" autocomplete="off" />
+          <button data-i18n>Send</button>
         </form>
         <pre id="log" class="log"></pre>
       </div>
@@ -164,39 +164,39 @@
 
   <!-- Shown whenever no wand is connected -->
   <dialog id="connectDlg" class="summon">
+    <select class="lang-pick small" aria-label="Language"></select>
     <div class="sigil" aria-hidden="true">✦</div>
-    <h2>Summon your wand</h2>
-    <p class="muted">Pick the wand up to wake it: its light blinks slowly while it waits.</p>
+    <h2 data-i18n>Summon your wand</h2>
+    <p class="muted" data-i18n>Pick the wand up to wake it: its light blinks slowly while it waits.</p>
     <div id="knownWands" class="known"></div>
     <button id="findBtn" class="primary big">Search for wands…</button>
-    <p id="noBle" class="warn" hidden>This browser can't use Bluetooth. Use Chrome or Edge on a Mac, Windows or
-      Android (iPhone browsers don't support Web Bluetooth).</p>
+    <p id="noBle" class="warn" hidden data-i18n>This browser can't use Bluetooth. Use Chrome or Edge on a Mac, Windows or Android (iPhone browsers don't support Web Bluetooth).</p>
     <p id="connectMsg" class="small"></p>
-    <p id="demoLink" class="small muted"><a href="?demo">Explore with a pretend wand</a></p>
+    <p id="demoLink" class="small muted"><a href="?demo" data-i18n>Explore with a pretend wand</a></p>
   </dialog>
 
   <!-- Remote library: device / brand / button -> test -> save + bind -->
   <dialog id="libDlg">
     <form method="dialog">
       <h2 id="libTitle">Remote library</h2>
-      <label>Device <select id="libDevice"></select></label>
-      <label>Brand <select id="libBrand"></select></label>
+      <label><span data-i18n>Device</span> <select id="libDevice"></select></label>
+      <label><span data-i18n>Brand</span> <select id="libBrand"></select></label>
       <p id="libNote" class="hint"></p>
-      <label>Button <select id="libAction"></select></label>
+      <label><span data-i18n>Button</span> <select id="libAction"></select></label>
       <div class="row">
-        <button type="button" id="libTest">Test</button>
+        <button type="button" id="libTest" data-i18n>Test</button>
         <button type="button" id="libLearn" hidden>Learn from remote</button>
       </div>
       <p id="libState" class="hint"></p>
-      <label>Cast with <select id="libSpell"></select></label>
+      <label><span data-i18n>Cast with</span> <select id="libSpell"></select></label>
       <menu>
-        <button value="cancel" formnovalidate>Cancel</button>
-        <button id="libSave" class="primary">Save</button>
+        <button value="cancel" formnovalidate data-i18n>Cancel</button>
+        <button id="libSave" class="primary" data-i18n>Save</button>
       </menu>
     </form>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script type="module" src="app/app.js?v=16"></script>
+  <script type="module" src="app/app.js?v=17"></script>
 </body>
 </html>

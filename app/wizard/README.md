@@ -1,14 +1,17 @@
 # Wizard art
 
-The Training tab shows the wizard in six poses. The `.svg` files here are placeholders.
-To use real art, drop a PNG with the same name next to them; the app uses the PNG
-automatically when it exists (no code change):
+The Training tab shows the wizard by mood. Each mood can have several images; they rotate:
 
-| File | When it's shown |
-|---|---|
-| `welcome.png` | Smiling, welcoming (start and end of the training) |
-| `talk1.png`, `talk2.png`, `talk3.png` | Talking, wand in hand; rotated while he explains and watches you |
-| `yes.png` | Pleased: the move was right |
-| `no.png` | Shaking his head: try again |
+| Mood | Files | When |
+|---|---|---|
+| welcome | `welcome.png` | Start and end of the training |
+| talk | `talk1.png`, `talk2.png`, `talk3.png` | Explaining and watching you |
+| yes | `yes.png`, `yes2.png` | The move was right |
+| no | `no.png`, `no2.png` | Try again |
 
-Same character in every image, portrait ~4:5 (e.g. 800×1000), transparent or dark background.
+Only PNGs that exist are used (missing ones are skipped). Without any PNG the `.svg` placeholders are shown.
+Portrait, transparent background, ~900 px tall.
+
+The current set was cut out of one Gemini sheet (6 poses + 3 backgrounds), the grey removed and upscaled ×4
+with Real-ESRGAN (anime 6B model). Backgrounds: `../scenes/workshop.jpg` (Training), `observatory.jpg`
+(Summon window), `wandcase.jpg` (Spells).

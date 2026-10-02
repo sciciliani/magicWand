@@ -238,3 +238,49 @@ button.linkish { background: none; border: 0; color: var(--muted); text-decorati
 .action-row .move-demo { width: 56px; height: 56px; }
 .action-row.teaching { border-color: var(--accent); }
 .wizard-controls { justify-content: flex-end; width: 100%; }
+
+/* ---------------------------------------------------------------- language pickers */
+select.lang-pick {
+  background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 8px; font-size: 13px; cursor: pointer;
+}
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.summon select.lang-pick { position: absolute; top: 10px; right: 10px; left: auto; width: auto; margin: 0; }
+
+/* ---------------------------------------------------------------- scenes (the Gemini art) */
+.wizard-stage {
+  position: relative; overflow: hidden;
+  background: linear-gradient(90deg, #0d0b14f0 0%, #0d0b14b0 34%, #0d0b14cc 60%, #0d0b14f2 100%),
+    url(scenes/workshop.jpg) center 40% / cover no-repeat, var(--panel);
+}
+.wizard-figure img {
+  -webkit-mask-image: linear-gradient(180deg, #000 82%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 82%, transparent 100%);
+  filter: none;
+}
+.wizard-figure { filter: drop-shadow(0 0 26px #8f6ad866); }  /* glow on the wrapper: follows the masked figure */
+dialog.summon {
+  background: linear-gradient(180deg, #120f1c8c, #0d0b14d9 62%, #0d0b14f2), url(scenes/observatory.jpg) center top / cover no-repeat, var(--panel);
+}
+.scene-wands {
+  background: linear-gradient(90deg, #17131ff5 45%, #17131fb8), url(scenes/wandcase.jpg) right center / auto 100% no-repeat, var(--panel);
+}
+
+/* ---------------------------------------------------------------- example path + one-two-three */
+.move-demo .arrow { fill: var(--accent); opacity: .85; }
+.move-demo .spark { opacity: 0; }
+.move-demo.playing .spark { opacity: 1; }
+.counter { display: flex; flex-direction: column; gap: 8px; }
+.counter ol { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.counter li {
+  padding: 8px 14px; border-radius: 99px; font-family: var(--display); font-size: 16px; letter-spacing: .5px;
+  color: var(--muted); border: 1px solid var(--line); transition: all .25s;
+}
+.counter li.past { color: var(--accent); border-color: #c9a24a66; }
+.counter li.now { color: var(--accent-ink); background: var(--gold); border-color: var(--gold); transform: scale(1.08); box-shadow: 0 0 16px #e3bd6288; }
+.counter li.go { background: linear-gradient(180deg, #fff3c4, var(--gold)); box-shadow: 0 0 24px #e3bd62aa; }
+.counter p { margin: 0; }
+@media (max-width: 700px) {
+  .wizard-figure img { max-height: 250px; width: auto; max-width: 100%; }
+  .wizard-stage { background-position: center, center 30%, 0 0; }
+}
