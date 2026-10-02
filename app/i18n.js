@@ -12,7 +12,7 @@ import de from './lang/de.js?v=1';
 export const LANGS = { en: 'English', es: 'Español', pt: 'Português', it: 'Italiano', de: 'Deutsch' };
 const DICTS = { es, pt, it, de };
 // BCP-47 tags for speech and <html lang>
-export const SPEECH_TAG = { en: 'en-GB', es: 'es-ES', pt: 'pt-BR', it: 'it-IT', de: 'de-DE' };
+export const SPEECH_TAG = { en: 'en-US', es: 'es-MX', pt: 'pt-BR', it: 'it-IT', de: 'de-DE' };  // US English, Latin American Spanish
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },

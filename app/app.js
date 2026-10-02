@@ -2,8 +2,8 @@
 // Protocol reference: docs/PROTOCOL.md
 import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=11';
 import { LIBRARY } from './ir-presets.js?v=11';
-import { initTraining } from './training.js?v=2';
-import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=1';
+import { initTraining } from './training.js?v=3';
+import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=2';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

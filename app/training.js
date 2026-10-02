@@ -10,7 +10,7 @@
 // the wand is in PRACTICE mode: it still sees moves but never fires a spell,
 // so nothing gets sent to the TV by accident.
 import { MOVES, MoveCatcher, measure, judge, describe } from './training-moves.js?v=2';
-import { t, lang, SPEECH_TAG, ascii, allTranslations } from './i18n.js?v=1';
+import { t, lang, SPEECH_TAG, ascii, allTranslations } from './i18n.js?v=2';
 
 const ORDER = ['circle', 'hit', 'zigzag'];
 const NEEDED = 3;            // good attempts per move
@@ -51,21 +51,39 @@ const store = {
 };
 
 // ---------------------------------------------------------------- voice
-// The best voice the browser has for the current language: "Enhanced/Premium/
-// Natural" system voices or Chrome's Google voices first, novelty voices never.
-const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|junior|ralph|fred|kathy|grandma|grandpa|eddy|flo\b|reed|rocko|sandy|shelley/i;
-const DEEP = { en: /daniel|arthur|oliver|george|james|thomas|male/i, es: /jorge|diego|juan|carlos|pablo|enrique|male/i,
-  pt: /felipe|joaquim|daniel|male/i, it: /luca|cosimo|diego|male/i, de: /markus|yannick|martin|hans|male/i };
+// Always a man's voice, picked automatically (no voice menu). Spanish is Latin
+// American (never Spain) and English is American. Names are the voices of
+// macOS, Windows/Edge and Chrome.
+const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|junior|ralph|fred|kathy/i;
+const ROBOTIC = /\b(eddy|reed|rocko|grandpa)\b/i;  // macOS "Eloquence" men: a last resort
+const MALE = {
+  en: /\b(aaron|alex|tom|evan|nathan|david|mark|guy|christopher|eric|brian|andrew|roger|steffan|daniel|arthur|oliver|george|ryan|thomas)\b|english male/i,
+  es: /\b(diego|juan|carlos|tom[aá]s|jorge|ra[uú]l|gerardo|alonso|gonzalo|lorenzo|mateo|emilio|andr[eé]s|pablo|alvaro|enrique)\b/i,
+  pt: /\b(felipe|joaquim|daniel|ant[oó]nio|duarte|humberto|fabio|julio)\b/i,
+  it: /\b(luca|cosimo|diego|giuseppe|benigno|calimero|gianni|rinaldo)\b/i,
+  de: /\b(markus|yannick|martin|stefan|conrad|killian|florian|bernd|christoph|ralf)\b/i,
+};
+const FEMALE = /female|grandma|\bflo\b|sandy|shelley|paulina|isabela|m[oó]nica|soledad|francisca|marisol|ang[eé]lica|luciana|alice|federica|paola|\banna\b|petra|helena|samantha|karen|moira|tessa|fiona|victoria|allison|\bava\b|susan|\bzoe\b|\bkate\b|serena|sabina|elvira|dalia|hilda|laura|elena|luc[ií]a|joana|fernanda|\bsara\b|zira|hazel|libby|sonia|jenny|\baria\b|\belsa\b|isabella|katja|amala|camila|catalina|salom[eé]|valentina|ximena|yolanda|google (espa|italiano|deutsch|portugu|us english|fran)/i;
 const hasSpeech = () => typeof speechSynthesis !== 'undefined';
 function voicesFor(l) {
   if (!hasSpeech()) return [];
   return speechSynthesis.getVoices().filter((v) => v.lang.replace('_', '-').toLowerCase().startsWith(l));
 }
+const region = (v) => v.lang.replace('_', '-').toLowerCase().split('-')[1] || '';
 function bestVoice(l) {
-  const tag = SPEECH_TAG[l].toLowerCase();
-  const score = (v) => (NOVELTY.test(v.name) ? -100 : 0) + (v.lang.replace('_', '-').toLowerCase() === tag ? 6 : 0) +
-    (/premium|enhanced|natural|neural/i.test(v.name) ? 8 : 0) + (/google/i.test(v.name) ? 5 : 0) + (DEEP[l]?.test(v.name) ? 3 : 0);
-  return voicesFor(l).sort((a, b) => score(b) - score(a))[0] || null;
+  const score = (v) => {
+    let s = 0;
+    if (NOVELTY.test(v.name)) s -= 100;
+    if (MALE[l]?.test(v.name) || ROBOTIC.test(v.name)) s += 20;
+    if (FEMALE.test(v.name)) s -= 15;
+    if (ROBOTIC.test(v.name)) s -= 10;
+    if (/premium|enhanced|natural|neural/i.test(v.name)) s += 4;
+    if (l === 'es') s += region(v) === 'es' ? -40 : region(v) === 'ar' ? 8 : 6;   // Latin America, never Spain
+    if (l === 'en') s += region(v) === 'us' ? 10 : -30;                         // American, not British
+    if (l === 'pt' && region(v) === 'br') s += 3;
+    return s;
+  };
+  return voicesFor(l).sort((x, y) => score(y) - score(x))[0] || null;
 }
 
 export function initTraining(app) {
@@ -108,11 +126,10 @@ export function initTraining(app) {
     if (voiceOn && hasSpeech() && tr.shown) {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(line);
-      const chosen = store.get(`wizardVoice_${lang}`);
-      const v = voicesFor(lang).find((x) => x.name === chosen) || bestVoice(lang);
+      const v = bestVoice(lang);
       u.lang = v?.lang || SPEECH_TAG[lang];
       if (v) u.voice = v;
-      u.pitch = 0.88;
+      u.pitch = 0.9;
       u.rate = 0.94;
       u.onend = () => { clearTimeout(fallback); setTimeout(finish, 150); };
       speechSynthesis.speak(u);
@@ -139,19 +156,9 @@ export function initTraining(app) {
     if (!voiceOn) hush();
     renderVoice();
   });
-  $('#wizVoicePick').addEventListener('change', (e) => {
-    store.set(`wizardVoice_${lang}`, e.target.value);
-    speak(t('Hello, apprentice!'));
-  });
   function renderVoice() {
     $('#wizVoice').textContent = voiceOn ? `🔊 ${t('Voice on')}` : `🔈 ${t('Voice off')}`;
-    const pick = $('#wizVoicePick');
-    const vs = voicesFor(lang).filter((v) => !NOVELTY.test(v.name));
-    const chosen = store.get(`wizardVoice_${lang}`) || '';
-    const best = bestVoice(lang);
-    pick.innerHTML = `<option value="">${t('Best voice')}${best ? ` (${esc(best.name)})` : ''}</option>` +
-      vs.map((v) => `<option value="${esc(v.name)}" ${v.name === chosen ? 'selected' : ''}>${esc(v.name)}</option>`).join('');
-    pick.hidden = !voiceOn || !vs.length;
+    $('#wizVoice').title = bestVoice(lang)?.name || '';
   }
   if (hasSpeech()) speechSynthesis.addEventListener?.('voiceschanged', renderVoice);
   renderVoice();
