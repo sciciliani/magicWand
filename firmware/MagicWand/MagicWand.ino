@@ -261,6 +261,26 @@ static void handle(char* line) {
     if (!storage::saveCode(i1)) return comm::out("ERR storage full or failed");
     comm::outf("OK CODE %d %d", i1, ir::rawLength(k));
     describeCode(i1);
+  } else if (!strcmp(cmd, "KHZ")) {  // KHZ <c> <khz>: change a stored code's carrier (e.g. a 38 kHz RCA TV)
+    int khz = a2 ? atoi(a2) : 0;
+    if (!validC(i1) || codes[i1].khz == 0 || khz < 20 || khz > 60) return comm::out("ERR KHZ args: KHZ <c> <20..60>");
+    codes[i1].khz = khz;
+    if (!storage::saveCode(i1)) return comm::out("ERR storage full or failed");
+    comm::outf("OK KHZ %d %d", i1, khz);
+    describeCode(i1);
+  } else if (!strcmp(cmd, "IRMODE")) {  // IRMODE [hw|sw]: carrier from a hardware timer or bit-banged (not saved)
+    if (a1 && !strcmp(a1, "sw")) ir::setHwCarrier(false);
+    else if (a1 && !strcmp(a1, "hw") && !ir::setHwCarrier(true)) return comm::out("ERR IRMODE no hardware timer reaches the IR pin (see BOOT line)");
+    else if (a1 && strcmp(a1, "hw")) return comm::out("ERR IRMODE args: IRMODE [hw|sw]");
+    comm::outf("OK IRMODE %s %s", ir::hwCarrier() ? "hw" : "sw", ir::carrierInfo());
+  } else if (!strcmp(cmd, "IRTEST")) {  // IRTEST <khz> [ms]: continuous carrier, default 3000 ms, max 5000
+    int khz = a1 ? atoi(a1) : 0;
+    int ms = a2 ? atoi(a2) : 3000;
+    if (khz < 20 || khz > 60 || ms < 1 || ms > 5000) return comm::out("ERR IRTEST args: IRTEST <20..60> [1..5000 ms]");
+    status::solid(true);
+    ir::carrierTest(khz, ms);
+    status::solid(false);
+    comm::outf("OK IRTEST %d %d %s", khz, ms, ir::carrierInfo());
   } else if (!strcmp(cmd, "PRACTICE")) {  // PRACTICE 1|0: moves are reported, spells don't fire
     practice = i1 == 1;
     comm::outf("OK PRACTICE %d", practice);
@@ -532,6 +552,10 @@ static void pollButton() {
 #endif
 
 void setup() {
+  // IR LED driver input LOW before anything else. After a wake-up from deep
+  // sleep every pin starts released (floating) and earlyBoot() may go straight
+  // back to sleep, so this must come first.
+  ir::forceOff();
   power::earlyBoot();  // WAKE_POLL: may go straight back to sleep if not moved
 
   // ALWAYS start the UART first and wait 1.5 s, on every boot and every

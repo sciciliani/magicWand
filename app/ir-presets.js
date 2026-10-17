@@ -50,7 +50,7 @@ export const PROTOCOLS = {
   samsung: { khz: 38, hdr: [4500, 4500], mark: 560, one: 1690, zero: 560, gap: 47000, reps: 1 },
   kaseikyo: { khz: 37, hdr: [3456, 1728], mark: 432, one: 1296, zero: 432, gap: 74000, reps: 1 }, // Panasonic
   coolix: { khz: 38, hdr: [4692, 4692], mark: 552, one: 1656, zero: 552, gap: 5244, reps: 2 },    // Midea & co.
-  rca: { khz: 56, hdr: [4000, 4000], mark: 500, one: 2000, zero: 1000, gap: 8000, reps: 1 },        // RCA: 12 bits + inverse
+  rca: { khz: 38, hdr: [4000, 4000], mark: 500, one: 2000, zero: 1000, gap: 8000, reps: 2 },        // RCA: 12 bits + inverse; 38 kHz as Flipper (classic RCA spec: 56-58)
 };
 
 /** Build a raw code from a hex value, e.g. fromHex('coolix', 'B24D7B84E01F'). */
@@ -94,7 +94,7 @@ export function describe(d, khz) {
   if (!d || !d.length) return 'empty';
   const ms = (d.reduce((a, b) => a + b, 0) / 1000).toFixed(0);
   let kind = 'raw';
-  if (khz === 56) kind = 'RCA-like';
+  if (Math.abs(d[0] - 4000) < 300 && Math.abs(d[1] - 4000) < 300) kind = 'RCA-like';
   else if (Math.abs(d[0] - 9000) < 1500 && Math.abs(d[1] - 4500) < 900) kind = 'NEC-like';
   else if (Math.abs(d[0] - 4500) < 900 && Math.abs(d[1] - 4500) < 900) kind = 'Samsung-like';
   else if (Math.abs(d[0] - 2400) < 500) kind = 'Sony-like';
@@ -140,7 +140,8 @@ const PANASONIC = tvActions({
   'Channel up': ['ChUp', pana('400401002C2D')], 'Channel down': ['ChDn', pana('40040100ACAD')],
   'Input / source': ['Input', pana('40040100A0A1')],
 });
-// RCA: 4-bit address (TVs: F), 8-bit command, then both inverted. 56 kHz.
+// RCA: 4-bit address (TVs: F), 8-bit command, then both inverted. Sent at 38 kHz:
+// many RCA-branded TVs use a 38 kHz receiver and barely see 56 kHz (tested Oct 2026).
 const rca = (cmd) => {
   const v = (0xf << 20) | (cmd << 12) | ((~(0xf << 8 | cmd)) & 0xfff);
   return hex('rca', v.toString(16).toUpperCase().padStart(6, '0'));

@@ -7,15 +7,16 @@
 //         Tools > Protocol stack > BLE (Arduino)     <-- required (ArduinoBLE API)
 #pragma once
 
-#define FW_VERSION "0.3.0-mg24"
+#define FW_VERSION "0.5.0-mg24"
 #define BLE_NAME_PREFIX "Wand"  // advertised as "Wand-XXXX"
 
 // ------------------------------------------------------------------ pins
 // Everything is wired straight to the XIAO (no transistors):
 //
-//   IR LED       D6 -> LED long leg; short leg -> GND
-//                (a 100-200R resistor in series is strongly recommended; without
-//                one, IR_DUTY_PERCENT keeps the pin's average current down)
+//   IR LED       through a 2N2222A (flat face toward you: E B C):
+//                D6 -> 200R -> base; base -> 2k -> GND (keeps it off when idle)
+//                3V3 -> 10R (or 2x 22R in parallel) -> LED long leg
+//                LED short leg -> collector; emitter -> GND   (~150 mA pulses)
 //   Vibration    D2 -> motor; other wire -> GND
 //   IR receiver  VS1838B OUT -> D3, VCC -> D7, GND -> GND
 //   Button       D9 -> microswitch -> GND
@@ -25,14 +26,9 @@
 // !! D1 (PC01): if it reads LOW at reset the MG24 bootloader waits for an
 // !! upload instead of running the sketch. An LED on D1 pulls it LOW: the
 // !! wand showed a solid yellow LED and never started. Keep D1 empty.
+// IR LED driver input (one pin; the driver board's transistor carries the
+// LED current, not the pin). Must be a port-C pin, D0 or D2..D7, never D1.
 #define PIN_IR_LED D6  // PC6 (Serial1 TX, unused; USB Serial is on other pins)
-// More IR power without extra parts: one pin gives the LED ~10 mA. Several
-// pins switched at the same instant share the load. List them here, join them
-// all together (D4-D5-D6 are side by side: one solder bridge; D0 by a short
-// wire) and lower the LED resistor: 4 pins + 33R = ~4-5x the light.
-// Only the free port-C pins D0, D4, D5, D6 (all switched in one register write).
-// Never list D1. With just D6 nothing changes.
-#define IR_LED_PINS {D4, D5, D6}  // e.g. {D0, D4, D5, D6}
 #define PIN_MOTOR D2
 #define PIN_IR_RECV D3
 // Receiver VCC on D7: the firmware powers it only while learning a code
@@ -83,14 +79,29 @@
 #define WAKE_IMU_INT 1
 #define WAKE_MODE WAKE_POLL
 #define WAKE_POLL_MS 1200
-#define WAKE_TILT_DEG 12.0f      // tilt that counts as "picked up" at wake sensitivity 3 (scales with SET wake)
+#define WAKE_TILT_DEG 12.0f      // change of pointing angle that counts as "picked up" at wake sensitivity 3 (scales with SET wake); rolling is ignored
 #define WAKE_SHAKE_G 0.12f       // or this much acceleration while checking
+// A movement must still be there on a second check this much later (a desk
+// bump is over by then; a hand picking the wand up is not). Adds ~0.3 s to waking.
+#define WAKE_CONFIRM_MS 300
+// Low battery: below LOW_BAT_SLEEP_V when going to sleep, the wand stops its
+// 1.2 s movement checks and only looks at the battery every LOW_BAT_POLL_MS
+// (the button still wakes it). Normal again above LOW_BAT_RESUME_V (charged).
+#define LOW_BAT_SLEEP_V 3.30f
+#define LOW_BAT_RESUME_V 3.60f
+#define LOW_BAT_POLL_MS 30000
 // #define PIN_IMU_INT PA5       // only for WAKE_IMU_INT, VERIFY first
 #define WAKE_THRESHOLD 3         // IMU wake-up threshold (x31 mg), WAKE_IMU_INT only
 #define CAST_WHILE_CHARGING 0    // only meaningful with HAS_DOCK_SENSE
 
 // ------------------------------------------------------------------ IR
 #define IR_CARRIER_KHZ 38
+// Carrier for RCA-format codes (4+4 ms header, 24 bits). The RCA standard says
+// 56 kHz, but many RCA-branded TVs use a common 38 kHz receiver: Santiago's TV
+// only reacted from 1-2 m at 56 kHz and works across the room at 38 (carrier
+// sweep, Oct 2026). Used by the "rca" preset of HEX and by LEARN's guess.
+// A single code can still be changed with KHZ <c> <khz>.
+#define IR_RCA_KHZ 38
 #define IR_DUTY_PERCENT 33   // LED on-time per carrier cycle (33% = gentler on a resistor-less LED)
 #define IR_CAPTURE_EDGES 1000  // learning buffer; a held button's extra repeats are ignored
 #define IR_RAW_MAX 600         // longest raw list accepted by the CODE command
@@ -101,6 +112,10 @@
 // Send each IR frame with interrupts off, so nothing (Bluetooth) can stretch
 // a pulse. Set 0 if the Bluetooth link drops while sending (less exact codes).
 #define IR_SEND_IRQ_OFF 1
+// 0.5.0: the carrier comes from a hardware TIMER (exact frequency and duty,
+// immune to interrupts). 0 = always the bit-banged carrier of 0.4.x.
+// At run time: IRMODE hw|sw.
+#define IR_HW_CARRIER 1
 // After every LEARN, print the code to the Serial Monitor the way IrDump does:
 // "IRDUMP 0xB24D7B84E01F x2 38kHz". IRDUMP [slot] prints it again.
 #define IR_DEBUG 1

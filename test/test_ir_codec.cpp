@@ -19,10 +19,26 @@ void detachInterrupt(int) {}
 void noInterrupts() {}
 void GPIO_PortOutSet(GPIO_Port_TypeDef, uint32_t) {}
 void GPIO_PortOutClear(GPIO_Port_TypeDef, uint32_t) {}
+void GPIO_PinModeSet(GPIO_Port_TypeDef, unsigned int, GPIO_Mode_TypeDef, unsigned int) {}
 void interrupts() {}
 static DWT_Type dwt; DWT_Type* DWT = &dwt;
 static DCB_Type dcb; DCB_Type* DCB = &dcb;
 uint32_t SystemCoreClock = 78000000;
+// Hardware-carrier fakes: by default the "timer" never toggles the pin, so the
+// boot check must reject every timer and sending stays on the software path.
+static TIMER_TypeDef t1, t2, t3, t4;
+TIMER_TypeDef *TIMER1 = &t1, *TIMER2 = &t2, *TIMER3 = &t3, *TIMER4 = &t4;
+static GPIO_TypeDef gpio; GPIO_TypeDef* GPIO = &gpio;
+void TIMER_Init(TIMER_TypeDef*, const TIMER_Init_TypeDef*) {}
+void TIMER_InitCC(TIMER_TypeDef*, unsigned int, const TIMER_InitCC_TypeDef*) {}
+void TIMER_TopSet(TIMER_TypeDef*, uint32_t) {}
+void TIMER_CompareSet(TIMER_TypeDef*, unsigned int, uint32_t) {}
+void TIMER_Enable(TIMER_TypeDef*, bool) {}
+void CMU_ClockEnable(CMU_Clock_TypeDef, bool) {}
+uint32_t CMU_ClockFreqGet(CMU_Clock_TypeDef) { return 39000000; }
+static bool timerReachesPin = false;  // flip to simulate a timer whose output toggles D6
+static unsigned pinReads = 0;
+unsigned int GPIO_PinInGet(GPIO_Port_TypeDef, unsigned int) { return timerReachesPin ? (pinReads++ & 1) : 0; }
 
 static int fails = 0;
 static void check(bool ok, const char* what) {
@@ -110,15 +126,15 @@ int main(int argc, char** argv) {
     ir::hex(got, ah, sizeof(ah));
     check(fok && !strcmp(ah, "B24D7B84E01F") && got.repeats == 2, "full capture: B24D7B84E01F x2 (as IrDump)");
   }
-  {  // RCA (the TV remote's codes): learned -> 56 kHz, HEX rca -> same timing
+  {  // RCA (the TV remote's codes): learned -> IR_RCA_KHZ (38), HEX rca -> same timing
     IrCode r = {}, back = {};
-    check(ir::setProtocol("rca", r) && ir::fromHex("F2A0D5", r) && r.khz == 56, "HEX rca F2A0D5 -> 56 kHz");
+    check(ir::setProtocol("rca", r) && ir::fromHex("F2A0D5", r) && r.khz == IR_RCA_KHZ && r.repeats == 2, "HEX rca F2A0D5 -> 38 kHz x2");
     static uint16_t rr[200];
     int rn = ir::toRaw(r, rr, 200);
     char rh[16];
     bool rok = ir::decode(rr, rn, 38, back);
     ir::hex(back, rh, sizeof(rh));
-    check(rok && !strcmp(rh, "F2A0D5") && ir::carrierFor(back) == 56, "learned RCA F2A0D5 -> 56 kHz");
+    check(rok && !strcmp(rh, "F2A0D5") && ir::carrierFor(back) == IR_RCA_KHZ, "learned RCA F2A0D5 -> 38 kHz");
     IrCode n = {};
     ir::setProtocol("nec", n); ir::fromHex("20DF10EF", n);
     check(ir::carrierFor(n) == 38, "learned NEC stays 38 kHz");
@@ -143,6 +159,21 @@ int main(int argc, char** argv) {
     char msg[80]; snprintf(msg, sizeof(msg), "all %d app presets decode", count);
     check(bad == 0 && count > 0, msg);
   }
+
+  // --- hardware carrier selection (0.5.0)
+  ir::begin();
+  check(!ir::hwCarrier() && strstr(ir::timingInfo(), "carrier SW"), "no timer reaches the pin -> software carrier");
+  check(!ir::setHwCarrier(true), "IRMODE hw refused without a working timer");
+  timerReachesPin = true;
+  ir::begin();
+  check(ir::hwCarrier() && strstr(ir::timingInfo(), "carrier HW TIMER1"), "timer toggles the pin -> HW TIMER1");
+  check(GPIO->TIMERROUTE[1].CC0ROUTE == ((2u << 0) | (6u << 16)), "TIMER1 CC0 routed to PC6 (D6)");
+  IrCode s; memset(&s, 0, sizeof(s));
+  ir::setProtocol("nec", s); ir::fromHex("20DF10EF", s);
+  ir::send(s);
+  check(GPIO->TIMERROUTE_CLR[1].ROUTEEN == 1u, "route switched off after a send (LED pin back to LOW)");
+  check(!ir::setHwCarrier(false) && strstr(ir::timingInfo(), "IRMODE sw"), "IRMODE sw -> software carrier");
+  check(ir::setHwCarrier(true), "IRMODE hw again");
 
   printf("\n%s\n", fails ? "FAILED" : "PASS");
   return fails ? 1 : 0;

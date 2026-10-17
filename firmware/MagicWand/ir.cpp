@@ -1,12 +1,20 @@
 #include "ir.h"
 
 #include <Arduino.h>
+#include <em_cmu.h>
 #include <em_gpio.h>
+#include <em_timer.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
 
-// Transmit: the 38 kHz carrier is bit-banged. Timing uses the Cortex-M33
+// Transmit (0.5.0): the carrier comes from a hardware TIMER in PWM mode (see
+// "hardware carrier" below): exact frequency and duty from the crystal clock,
+// whatever the CPU is doing. The CPU only places the mark/space edges. If no
+// timer can drive the LED pin (checked at boot), or IRMODE sw is set, the
+// carrier is bit-banged as before:
+//
+// Software carrier: the 38 kHz carrier is bit-banged. Timing uses the Cortex-M33
 // cycle counter (DWT->CYCCNT), which we switch on ourselves and CHECK at boot:
 // the previous version trusted getCPUCycleCount() and, if that counter wasn't
 // running, looped forever with interrupts off (wand frozen, button dead).
@@ -53,32 +61,153 @@ static void initCycleCounter() {
   cyclesPerUs = cycOk ? expect : 0;
 }
 
-// The IR LED can be driven by several port-C pins at once (IR_LED_PINS): one
-// register write switches them all in the same instant, so they share the load.
-#ifndef IR_LED_PINS
-#define IR_LED_PINS {PIN_IR_LED}
-#endif
-static const uint8_t kLedPins[] = IR_LED_PINS;
-static uint32_t ledMask = 0;  // port C bits
+// One IR LED pin (PIN_IR_LED) driving the LED driver board's input.
+// XIAO MG24: D0 = PC0 ... D7 = PC7 (variant pin table), so the Arduino pin
+// number is the port C bit. D1 is never allowed: LOW on D1 at reset = the
+// bootloader's upload-recovery loop.
+static_assert(PIN_IR_LED <= D7 && PIN_IR_LED != D1, "PIN_IR_LED must be D0 or D2..D7 (port C), never D1");
+static const uint8_t kLedPin = PIN_IR_LED;   // port C pin number
+static const uint32_t ledMask = 1u << kLedPin;
 
-static void ledPinsOutput() {
-  for (uint8_t p : kLedPins) {
-    if (p == D1) continue;  // never: LOW on D1 at reset = upload-recovery loop
-    pinMode(p, OUTPUT);
-  }
-}
+uint32_t pinMask() { return ledMask; }
+
+// Strong push-pull drive, starting LOW, written straight to the GPIO registers
+// (the core's pinMode() is a no-op until the core has finished its own init).
+static void ledPinsOutput() { GPIO_PinModeSet(gpioPortC, kLedPin, gpioModePushPull, 0); }
 
 static inline void ledOn() { GPIO_PortOutSet(gpioPortC, ledMask); }
 void ledOff() { GPIO_PortOutClear(gpioPortC, ledMask); }
 
-void begin() {
-  ledMask = 0;
-  for (uint8_t p : kLedPins) {
-    // XIAO MG24: D0 = PC0 ... D7 = PC7 (variant pin table)
-    if (p != D1 && p <= D7) ledMask |= 1u << p;
-  }
+void forceOff() {
   ledOff();
   ledPinsOutput();
+}
+
+// ------------------------------------------------------------------ hardware carrier
+// A TIMER counts the peripheral clock in PWM mode: TOP = one carrier period,
+// compare value = the on-time (IR_DUTY_PERCENT). Channel CC0 is routed to the
+// IR LED pin. The carrier runs all through a
+// send; the CPU only switches the route on for each mark and off for each space
+// (route off = the pin goes back to its GPIO value, which is LOW). Interrupts
+// can no longer bend the carrier itself; at worst they move an edge.
+//
+// Which timer can reach which pin differs per chip, so at boot each candidate
+// is tried on the LED pin for ~0.3 ms and the pin is read back: the first
+// timer that really toggles it is kept. None = software carrier (the BOOT line
+// "IR timing:" says which). TIMER0 is left to the core (analogWrite, LED PWM).
+#ifndef IR_HW_CARRIER
+#define IR_HW_CARRIER 1
+#endif
+
+struct HwTimer {
+  TIMER_TypeDef* t;
+  CMU_Clock_TypeDef clk;
+  uint8_t idx;
+  const char* name;
+};
+static const HwTimer kHwTimers[] = {
+    {TIMER1, cmuClock_TIMER1, 1, "TIMER1"},
+    {TIMER2, cmuClock_TIMER2, 2, "TIMER2"},
+    {TIMER3, cmuClock_TIMER3, 3, "TIMER3"},
+    {TIMER4, cmuClock_TIMER4, 4, "TIMER4"},
+};
+static const HwTimer* hw = nullptr;  // timer that passed the boot check
+static bool hwWanted = true;         // IRMODE hw|sw
+static uint32_t hwTop = 0;
+static uint32_t hwClockHz = 0;
+static uint16_t hwKhz = 0;
+
+// Carrier at `khz` on CC0, counter running, not routed to the pin yet.
+static bool hwConfigure(const HwTimer& h, uint16_t khz) {
+  CMU_ClockEnable(h.clk, true);
+  uint32_t f = CMU_ClockFreqGet(h.clk);
+  uint32_t period = (f + khz * 500u) / (khz * 1000u);  // timer ticks per carrier cycle
+  if (period < 20 || period > 65536) return false;    // TIMER1..4 are 16-bit
+  TIMER_Init_TypeDef init = TIMER_INIT_DEFAULT;
+  init.enable = false;
+  TIMER_Init(h.t, &init);
+  TIMER_InitCC_TypeDef cc = TIMER_INITCC_DEFAULT;
+  cc.mode = timerCCModePWM;  // output set at overflow, cleared at compare match
+  TIMER_InitCC(h.t, 0, &cc);
+  hwTop = period - 1;
+  TIMER_TopSet(h.t, hwTop);
+  uint32_t on = (period * IR_DUTY_PERCENT + 50) / 100;
+  TIMER_CompareSet(h.t, 0, on);
+  TIMER_Enable(h.t, true);
+  hwClockHz = f;
+  hwKhz = khz;
+  return true;
+}
+
+// CC0 -> IR LED pin (port C). The route stays disabled until a mark.
+static void hwRoute(const HwTimer& h) {
+  GPIO->TIMERROUTE[h.idx].CC0ROUTE = ((uint32_t)gpioPortC << _GPIO_TIMER_CC0ROUTE_PORT_SHIFT) |
+                                     ((uint32_t)kLedPin << _GPIO_TIMER_CC0ROUTE_PIN_SHIFT);
+}
+
+// Mark: restart the carrier cycle (next tick overflows = output HIGH) and
+// connect the timer to the pins. Space: disconnect, pins fall back to LOW.
+static inline void hwMarkOn() {
+  hw->t->CNT = hwTop;
+  GPIO->TIMERROUTE_SET[hw->idx].ROUTEEN = GPIO_TIMER_ROUTEEN_CC0PEN;
+}
+static inline void hwMarkOff() { GPIO->TIMERROUTE_CLR[hw->idx].ROUTEEN = GPIO_TIMER_ROUTEEN_CC0PEN; }
+
+static void hwStop() {
+  if (!hw) return;
+  hwMarkOff();
+  TIMER_Enable(hw->t, false);
+  CMU_ClockEnable(hw->clk, false);
+  ledOff();
+}
+
+static bool hwStart(uint16_t khz) {
+  if (!hw || !hwConfigure(*hw, khz)) return false;
+  hwRoute(*hw);
+  return true;
+}
+
+// Boot check: does this timer really toggle the LED pin?
+static bool hwProbe(const HwTimer& h) {
+  const uint8_t pin = kLedPin;
+  hw = &h;
+  bool ok = false;
+  if (hwStart(IR_CARRIER_KHZ)) {
+    hwMarkOn();
+    int toggles = 0;
+    unsigned last = GPIO_PinInGet(gpioPortC, pin);
+    uint32_t t0 = cycOk ? DWT->CYCCNT : 0;
+    for (uint32_t i = 0; i < 200000 && toggles < 40; i++) {
+      unsigned v = GPIO_PinInGet(gpioPortC, pin);
+      if (v != last) { toggles++; last = v; }
+      if (cycOk && (uint32_t)(DWT->CYCCNT - t0) > 300 * cyclesPerUs) break;
+    }
+    ok = toggles >= 10;  // 0.3 ms at 38 kHz = ~22 toggles
+  }
+  hwStop();
+  hw = nullptr;
+  return ok;
+}
+
+static void hwFind() {
+  hw = nullptr;
+#if IR_HW_CARRIER
+  for (const HwTimer& h : kHwTimers) {
+    if (hwProbe(h)) { hw = &h; break; }
+  }
+#endif
+}
+
+static inline bool useHw() { return hw && hwWanted; }
+
+bool setHwCarrier(bool on) {
+  hwWanted = on;
+  return useHw();
+}
+bool hwCarrier() { return useHw(); }
+
+void begin() {
+  forceOff();
 #if HAS_IR_RECEIVER
 #ifdef PIN_IR_RECV_PWR
   pinMode(PIN_IR_RECV_PWR, OUTPUT);
@@ -87,12 +216,29 @@ void begin() {
   pinMode(PIN_IR_RECV, INPUT_PULLUP);
 #endif
   initCycleCounter();
+  hwFind();
 }
 
 const char* timingInfo() {
-  static char buf[40];
-  if (cycOk) snprintf(buf, sizeof(buf), "cycle counter %lu MHz (measured %lu)", (unsigned long)cyclesPerUs, (unsigned long)measuredPerUs);
-  else snprintf(buf, sizeof(buf), "delay fallback");
+  static char buf[110];
+  int n;
+  if (cycOk) n = snprintf(buf, sizeof(buf), "cycle counter %lu MHz (measured %lu)", (unsigned long)cyclesPerUs, (unsigned long)measuredPerUs);
+  else n = snprintf(buf, sizeof(buf), "delay fallback");
+  if (n < 0 || n >= (int)sizeof(buf)) return buf;
+  if (useHw()) snprintf(buf + n, sizeof(buf) - n, ", carrier HW %s", hw->name);
+  else if (hw) snprintf(buf + n, sizeof(buf) - n, ", carrier SW (IRMODE sw; HW %s available)", hw->name);
+  else snprintf(buf + n, sizeof(buf) - n, ", carrier SW (no timer reached the LED pin)");
+  return buf;
+}
+
+const char* carrierInfo() {
+  static char buf[64];
+  if (!useHw()) return "SW (bit-banged)";
+  if (hwKhz) {
+    snprintf(buf, sizeof(buf), "HW %s %lu Hz clock, %u ticks/cycle", hw->name, (unsigned long)hwClockHz, (unsigned)(hwTop + 1));
+    return buf;
+  }
+  snprintf(buf, sizeof(buf), "HW %s", hw->name);
   return buf;
 }
 
@@ -180,6 +326,34 @@ static void transmit(const IrCode& f) {
 #endif
 }
 
+// Hardware carrier: the timer already runs (hwStart); here only the edges.
+static void transmitHw(const IrCode& f) {
+  if (!cycOk) {
+    walk(f, [&](uint32_t us, bool isMark) {
+      if (isMark) hwMarkOn();
+      delayMicroseconds(us);
+      hwMarkOff();
+    });
+    return;
+  }
+#if IR_SEND_IRQ_OFF
+  noInterrupts();
+#endif
+  const uint32_t t0 = DWT->CYCCNT;
+  uint32_t at = 0;
+  walk(f, [&](uint32_t us, bool isMark) {
+    uint32_t end = at + us * cyclesPerUs;
+    if (isMark) hwMarkOn();
+    waitUntil(t0, end);
+    if (isMark) hwMarkOff();
+    at = end;
+  });
+  hwMarkOff();
+#if IR_SEND_IRQ_OFF
+  interrupts();
+#endif
+}
+
 // Pause between frames, interrupts on (timing not critical).
 static void pauseUs(uint32_t us) {
   if (!cycOk) { delayMicroseconds(us); return; }
@@ -194,9 +368,39 @@ void send(const IrCode& code) {
   int reps = code.repeats < 1 ? 1 : (code.repeats > IR_MAX_REPEATS ? IR_MAX_REPEATS : code.repeats);
   IrCode frame = code;
   frame.repeats = 1;
+  bool useTimer = useHw() && hwStart(code.khz);
   for (int r = 0; r < reps; r++) {
     if (r > 0) pauseUs(code.gap ? code.gap : 40000);
-    transmit(frame);
+    if (useTimer) transmitHw(frame);
+    else transmit(frame);
+  }
+  if (useTimer) hwStop();
+  ledOff();
+}
+
+// Continuous carrier for `ms` (IRTEST): for a meter across R3, a logic
+// analyzer, or a phone camera. Software mode runs in 10 ms chunks with
+// interrupts off, like a long mark.
+void carrierTest(uint16_t khz, uint32_t ms) {
+  if (khz < 20 || khz > 60 || ms == 0) return;
+  if (ms > 5000) ms = 5000;
+  ledPinsOutput();
+  if (useHw() && hwStart(khz)) {
+    hwMarkOn();
+    delay(ms);
+    hwStop();
+    return;
+  }
+  IrCode m;
+  memset(&m, 0, sizeof(m));
+  m.khz = khz;
+  for (uint32_t done = 0; done < ms; done += 10) {
+    // one "frame" = a single 10 ms mark: header mark only, no bits
+    m.hdrMark = 10000;
+    m.hdrSpace = 1;
+    m.nbits = 0;
+    m.repeats = 1;
+    transmit(m);
   }
   ledOff();
 }
@@ -250,7 +454,7 @@ bool setProtocol(const char* name, IrCode& c) {
       {"samsung", 38, 4500, 4500, 560, 1690, 560, 47000, 0, 1},  // Samsung TV
       {"coolix", 38, 4692, 4692, 552, 1656, 552, 5244, 0, 2},    // Midea & co. ACs
       {"sony", 40, 2400, 600, 600, 1200, 600, 25000, 1, 3},      // Sony SIRC
-      {"rca", 56, 4000, 4000, 500, 2000, 1000, 8000, 0, 1},      // RCA: 12 bits + inverted copy
+      {"rca", IR_RCA_KHZ, 4000, 4000, 500, 2000, 1000, 8000, 0, 2},  // RCA: 12 bits + inverted copy, 2 frames
   };
   for (const P& p : kP) {
     if (strcasecmp(name, p.n)) continue;
@@ -355,13 +559,15 @@ bool decode(const uint16_t* d, int n, uint16_t khz, IrCode& out) {
 }
 
 // ------------------------------------------------------------------ learn
-// The receiver can't measure a remote's carrier, so guess it from the format:
-// RCA (4 ms + 4 ms header, 24 bits = 12 bits + their inverse) is 56 kHz and
-// Sony (2.4 ms header, pulse-width) is 40 kHz. A 56 kHz TV barely sees 38 kHz.
+// The receiver can't measure a remote's carrier (it only outputs the decoded
+// on/off envelope), so guess it from the format: RCA (4 ms + 4 ms header,
+// 24 bits = 12 bits + their inverse) gets IR_RCA_KHZ and Sony (2.4 ms header,
+// pulse-width) 40 kHz; everything else IR_CARRIER_KHZ. If a learned code only
+// works up close, the guess is wrong: fix it with KHZ <c> <khz>.
 static uint16_t carrierFor(const IrCode& c) {
   if (!c.pw && c.nbits == 24 && c.hdrMark > 3200 && c.hdrMark < 4800 && c.hdrSpace > 3200 && c.hdrSpace < 4800) {
     uint32_t v = ((uint32_t)c.data[0] << 16) | ((uint32_t)c.data[1] << 8) | c.data[2];
-    if (((v >> 12) ^ (v & 0xFFF)) == 0xFFF) return 56;
+    if (((v >> 12) ^ (v & 0xFFF)) == 0xFFF) return IR_RCA_KHZ;
   }
   if (c.pw && c.hdrMark > 1900 && c.hdrMark < 2900) return 40;
   return IR_CARRIER_KHZ;

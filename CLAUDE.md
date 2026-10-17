@@ -28,7 +28,8 @@ firmware/MagicWand/
   gesture.*      copy of firmware/common (make sync). Pure C++, also built on the host
   imu.*          LSM6DS3TR-C via "Seeed Arduino LSM6DS3", power pin PD5, quickGravity() for the sleep poller
   power.*        EM4 deep sleep via ArduinoLowPower; WAKE_POLL (tilt check from backup RAM) or WAKE_IMU_INT
-  ir.*           TX: software 38 kHz carrier timed with getCPUCycleCount(), IRQs off only during marks
+  ir.*           TX (0.5.0): carrier from a hardware TIMER (PWM, routed to the LED pin, probed at boot),
+                 edges timed with the DWT cycle counter, IRQs off per frame; bit-banged fallback (IRMODE sw)
                  RX: TSOP edge ISR -> raw durations
   storage.*      NVM3 key/value (one object per item, chunked at 700 B) or EEPROM fallback (STORAGE_NVM3 0)
   comm.*         NUS on the native Silicon Labs BLE stack (Protocol stack: BLE (Silabs)) + USB Serial, same text protocol; notifications sized to the MTU
@@ -57,12 +58,20 @@ Key decisions (agreed with Santiago, don't undo without asking):
 4. **IMU INT1 pin**: find it on the XIAO MG24 Sense schematic. If it's EM4-wake-capable, set
    `PIN_IMU_INT` + `WAKE_MODE WAKE_IMU_INT`. That path also needs EM4 GPIO retention so PD5 keeps
    the IMU powered (EMU->EM4CTRL EM4IORETMODE, set in power.cpp).
-5. **IR TX**: check carrier frequency with a scope or a phone camera on D0; digitalWrite latency is
-   absorbed by cycle-count scheduling. If BLE misbehaves during long codes, move to a TIMER PWM + PRS gating.
+5. **IR TX (0.5.0, hardware carrier)**: BOOT line `IR timing:` must say `carrier HW TIMERn`. If it says
+   `carrier SW (no timer reached the LED pin)`, no TIMER1..4 output reached PC6 (or the pin read-back
+   doesn't work): sending still works, bit-banged. Check with a logic analyzer on D6: `IRTEST 38` = steady
+   38.0 kHz at 33 % duty; `IRMODE sw` vs `IRMODE hw` for A/B. Compiled against the real core headers
+   (arm-none-eabi-g++, ble_silabs flags) but not linked or run yet.
 6. `PIN_VBAT_EN PD3` is a guess. The battery formula is from the Seeed wiki; check it with a meter.
 7. Serial left open blocks EM4 wake-up (Seeed forum): comm::end() calls Serial.end() before sleep.
 8. BLE writes from Chrome: app tries 180-byte chunks, falls back to 20 on error. Check that CODE uploads work.
 9. Gesture thresholds with real data: `tools/wand_log.py --csv` + the app's Live tab.
+
+10. **IR pin in deep sleep**: the core's `LowPower.deepSleep(ms)` releases every pin in EM4, so the IR
+   driver input floated. `power.cpp` now enters EM4 itself (`em4SleepIrHeldLow`, same BURTC steps) with
+   pin retention: IR pins held LOW, all other pins set to disabled first (= what EM4 gave them before).
+   `setup()` starts with `ir::forceOff()`. Check: D6 reads 0 V while asleep, and sleep current didn't rise.
 
 ## Next steps / ideas (not started)
 

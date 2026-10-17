@@ -23,6 +23,9 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `LEARN <c> [name]` | Capture a button from a remote into IR slot c (0–11). Countdown first (a buzz tick per second, long buzz on go), then a 10 s window. The capture is decoded (see below) | `LEARN c count 3`, `count 2`, `count 1`, `LEARN c go`, `LEARN c waiting`, then `LEARN c ok <bits> <hex> <repeats> <kHz>` (e.g. `LEARN 0 ok 24 F2A0D5 3 56`) / `timeout` / `unsupported` |
 | `CODE <c> <khz> <name\|-> <d1,d2,…>` | Upload a raw code: µs durations, mark first. Decoded on arrival | `OK CODE c <durations>` + `IRCODE …`, or `ERR CODE can't decode` |
 | `HEX <c> <nec\|samsung\|coolix\|sony\|rca> <name> <hex> [repeats]` | Store a code from its hex value (as IrDump prints it) and a protocol's timings | `OK CODE c <durations>` + `IRCODE …` |
+| `KHZ <c> <khz>` | Change a stored code's carrier (20–60 kHz), e.g. a learned RCA code for a 38 kHz TV | `OK KHZ c khz` + `IRCODE …` |
+| `IRMODE [hw\|sw]` | Carrier source (0.5.0): `hw` = hardware timer (default when the boot check found one), `sw` = bit-banged like 0.4.x. Not saved: a reboot goes back to `hw`. For A/B range tests | `OK IRMODE hw HW TIMER1 …` / `ERR IRMODE …` |
+| `IRTEST <khz> [ms]` | Continuous carrier on the IR LED for `ms` (default 3000, max 5000): meter across R3 (≈ 0.33 × 0.62 V), logic analyzer, phone camera | `OK IRTEST khz ms <carrier>` |
 | `DUMPC <c>` | Read a code back (backup) | `CODE c khz name d1,d2,…` + `IRCODE …` |
 | `IRDUMP [c]` | Print the last learned code (or slot c) to the USB Serial Monitor only: hex, repeats, carrier. Also printed after every LEARN when `IR_DEBUG` is 1 | `IRDUMP 0xF2A0D5 x3 56kHz` |
 | `CNAME <c> <name>` | Rename code | `OK CNAME c` |

@@ -71,7 +71,7 @@ Everything connects straight to the XIAO: no transistors, no MOSFETs.
 
 | XIAO pin | Goes to | Why |
 |---|---|---|
-| **D6** | IR LED long leg (a 100–200 Ω resistor in series is strongly recommended) | Sends IR codes. More range: bridge **D4–D5–D6** together, add **D0** with a short wire, use a **33 Ω** resistor and set `IR_LED_PINS {D0, D4, D5, D6}` in config.h (4 pins share the load, ~4–5× the light) |
+| **D6** | IR driver board input (D6 → 220 Ω → MOSFET gate; LED powered from BAT+ through the driver) | Sends IR codes. One pin only: the driver's transistor carries the LED current (`PIN_IR_LED` in config.h) |
 | **D2** | Vibration motor red wire | Buzzes |
 | **D3** | IR receiver OUT | Reads a remote when learning |
 | **D7** | IR receiver VCC | Powered only while learning a code: clean supply (the motor is never on at the same time) and nothing drawn while the wand sleeps |
@@ -212,6 +212,10 @@ HEX 1 coolix AC_off B24D7B84E01F
 HEX 2 nec    TV_pwr 20DF10EF          # LG / most NEC TVs
 HEX 3 samsung TV_pwr E0E040BF
 HEX 4 sony   TV_pwr A90               # Sony, sent 3x
+HEX 5 rca    TV_pwr F2A0D5            # RCA TV (IR_RCA_KHZ, 38 kHz by default), sent 2x
+KHZ 5 56                                # change a stored code's carrier if the TV needs another
+IRTEST 38                               # 3 s of steady 38 kHz carrier (meter, logic analyzer, camera)
+IRMODE sw                               # bit-banged carrier like 0.4.x (IRMODE hw = hardware timer, default)
 ```
 
 Add a number at the end to change how many times the frame is sent (1–4). `DUMPC <slot>` shows

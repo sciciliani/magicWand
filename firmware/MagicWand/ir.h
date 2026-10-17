@@ -38,8 +38,20 @@ namespace ir {
 
 void begin();
 void ledOff();                   // all IR LED pins low
+// IR LED pins as strong push-pull outputs, LOW. Works before begin() too:
+// it's the first line of setup(), so the LED driver's input never floats,
+// not even while the sleep poller decides to go straight back to sleep.
+void forceOff();
+uint32_t pinMask();              // port C bits of the IR LED pins (power.cpp keeps them LOW in EM4)
 void send(const IrCode& code);   // blocking; the frame x repeats, as the remote sent it
 const char* timingInfo();        // IR timing method (for the BOOT line)
+// Carrier source: a hardware TIMER (default when one can reach the LED pin)
+// or the bit-banged software loop. setHwCarrier(false) = IRMODE sw, for A/B
+// tests; returns whether the hardware carrier is now in use.
+bool setHwCarrier(bool on);
+bool hwCarrier();
+const char* carrierInfo();       // e.g. "HW TIMER1 39000000 Hz clock, 1026 ticks/cycle"
+void carrierTest(uint16_t khz, uint32_t ms);  // continuous carrier (IRTEST), max 5 s
 
 // Raw pulses (µs: mark, space, mark, ...) <-> decoded code.
 bool decode(const uint16_t* d, int n, uint16_t khz, IrCode& out);  // keeps out.name
