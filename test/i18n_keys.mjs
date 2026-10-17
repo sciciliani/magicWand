@@ -13,20 +13,25 @@ const html = read('index.html');
 for (const m of html.matchAll(/<(\w+)\b[^>]*?\sdata-i18n(?=[\s>])[^>]*>([\s\S]*?)<\/\1>/g)) add(m[2]);
 for (const m of html.matchAll(/data-i18n-(?:placeholder|title|alt)="([^"]+)"/g)) add(m[1]);
 // t('...') everywhere, say('...') / say(x ? '...' : '...') in training.js
-for (const f of ['app/app.js', 'app/wand-link.js', 'app/training.js']) {
+for (const f of ['app/app.js', 'app/wand-link.js', 'app/training.js', 'app/spells.js', 'app/devices.js', 'app/knight.js', 'app/spell-book.js']) {
   const src = read(f);
   for (const m of src.matchAll(new RegExp(`\\bt\\(\\s*${STR}`, 'g'))) add(unq(m[1]));
   for (const m of src.matchAll(new RegExp(`\\bsay\\(\\s*${STR}`, 'g'))) add(unq(m[1]));
   if (f !== 'app/wand-link.js') for (const m of src.matchAll(new RegExp(`\\?\\s*${STR}\\s*:\\s*${STR}`, 'g')))
-    for (const x of [unq(m[1]), unq(m[2])]) if ((/\s/.test(x) || /^[A-Z][a-z]/.test(x)) && !IGNORE.has(x)) add(x);
+    for (const x of [unq(m[1]), unq(m[2])]) if ((/\s/.test(x) || /^[A-Z][a-z]/.test(x)) && !IGNORE.has(x) && !x.startsWith('<')) add(x);
 }
 // training.js extras: the count and retry lines
 const tr = read('app/training.js');
 for (const m of tr.matchAll(new RegExp(`(?:BEATS = \\[|startCycle\\(false, )([^\\]\\n]*)`, 'g')))
   for (const s of m[1].matchAll(new RegExp(STR, 'g'))) add(unq(s[1]));
 for (const m of tr.matchAll(/\? '([A-Z][^']*[.!?…])' : null/g)) add(m[1]);
-// app.js suggested moves
-for (const m of read('app/app.js').matchAll(/(?:move|use): '([^']+)'/g)) add(m[1]);
+// spell book: names and how-tos
+for (const m of read('app/spell-book.js').matchAll(/(?:name|how): '([^']+)'/g)) add(m[1]);
+// setup purposes, device types, their default buttons and how-tos
+for (const m of tr.matchAll(/(?:title|sub): '([^']+)'/g)) add(m[1]);
+const dv = read('app/devices.js');
+for (const m of dv.matchAll(/name: '([^']+)', keys: \[([^\]]*)\]/g)) { add(m[1]); for (const k of m[2].matchAll(/'([^']+)'/g)) add(k[1]); }
+for (const m of dv.matchAll(/^  '?([^':]+?)'?: '([^']+)',$/gm)) add(m[2]);
 // training-moves.js: names, how, verdicts
 const tm = read('app/training-moves.js');
 for (const m of tm.matchAll(/(?:name|how): '([^']+)'/g)) add(m[1]);

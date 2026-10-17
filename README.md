@@ -96,21 +96,40 @@ Keep it empty.
   VCC/+). A bare VS1838B, seen from the front (dome), legs down, is OUT – GND – VCC.
   Swapping VCC and GND can kill it. A 100 nF capacitor across its VCC–GND helps against noise.
 
-## Training (the wizard)
+## Setup (the wizard)
 
-The **Training** tab opens by itself the first time a wand connects. A wizard teaches three fixed moves:
+The first time a wand with its factory name (`Wand-XXXX`) connects, the **Wizard** tab opens:
 
-1. **Circle**: ONE full loop with the tip, about one second.
-2. **Hit**: ONE quick snap up and straight back down.
-3. **ZigZag**: side to side, fast: right, left, right.
+1. **Names**: your name and the wand's name (the wand restarts with it and the app reconnects by itself).
+2. **The rule**: before every spell, hold the wand **still and centred**, pointing at the device.
+3. **Four spells**: **ZigZag** (right, left, right), **Stroke** (high to low), **Tip up** (low to high),
+   **Circle**. Each attempt goes "**Ready… one ZigZag… GO!**": the wand ticks twice and buzzes GO, you do
+   ONE move. The wand records it (`REC`) while the app judges it from the motion stream
+   (`app/training-moves.js`); a wrong move is taken back (`GUNDO`), so the wand keeps three good samples.
+   At the end recognition is set forgiving (`SET thr 0.7`).
+4. **What for**: Control home devices, Spell battle against a Knight, Unlock treasures (coming soon), or Skip.
 
-For each move he explains it while the example path plays once (↻ replays it). Every attempt then goes
-"**Ready… one Circle… now!**": hold still until "now", the wand buzzes, do ONE move and hold still. He reads
-it and says what to fix ("Faster!", "Slower", "Up and down only"). Three good ones per move, then each move
-gets an action from the remote library. If the wand doesn't know a move yet, it watches you do it three times
-first (the same as recording in the Spells tab). While you practise, the wand is in `PRACTICE` mode: moves
-never send IR. The numbers of every attempt are in the Log tab (`TRAIN …`); the limits are in `TUNE` at the
-top of `app/training-moves.js`.
+**Spells** tab: the spells on the wand (Train, Forget), the ones it can still learn (each with its picture),
+and **Create your own spell**. The trainer counts 1, 2, GO, takes three samples, has a sensitivity slider
+(`GTHR`) and a Test button (practice mode: nothing is sent). A new spell too close to an existing one gets a
+warning. Pictures: drawn as SVG in `app/spell-book.js`; your own art goes in `app/spells/` (see its README).
+
+**Devices** tab: add a device (TV, air conditioner, LED lights, other) → brand, or **Detect it with my remote**
+(press Power on your remote: the code is looked up in the library) → its buttons, each with Test, Learn and
+the spell that casts it. More buttons come from the library or are learned from your remote (e.g. Netflix).
+Only buttons that a spell casts take an IR slot on the wand.
+
+**Knight** tab: the wand gets a random pair of NEC codes, HIT and HEAL. A new (or reset) knight learns the
+first code it receives as hit and the second as heal: **Pair** sends HIT then HEAL. Every knight paired with
+the wand learns the same pair, so you hit whichever knight you point at.
+
+**Backups**: after the setup and every time the wand learns something, this browser keeps a copy of the
+whole wand (last 5, in Settings → Backups). When a wand it knows comes back empty after a factory reset,
+the app offers to restore it. Wands are recognised by their chip ID (INFO `uid`, firmware 0.5.0+).
+
+**Reconnecting**: with a wand this browser knows, the app reconnects by itself (and keeps trying while the
+wand sleeps); **Connect to a new wand** is in the bar at the top. The Summon window only appears when no
+wand is known.
 
 Art: `app/wizard/*.png` (the wizard) and `app/scenes/*.jpg` (backgrounds), see `app/wizard/README.md`.
 
@@ -192,14 +211,13 @@ Try the UI without a wand at `http://localhost:8000/?demo`.
 
 ## First session with the wand
 
-1. **Connect** in Wand Workshop (it shows up as `Wand-XXXX`).
-2. **Live** tab: wave the wand and roll it in your hand: a swish right should still show
+1. **Connect** in Wand Workshop (it shows up as `Wand-XXXX`): the wizard runs the setup.
+2. **Home** tab: wave the wand and roll it in your hand: a swish right should still show
    *tip right*. If directions look wrong, **Settings → Calibrate**.
-3. **IR codes**: on a spell card press **📜 Library**: pick device, brand and button, press **Test**
-   while pointing at the device, then **Save** to bind it. Or *Learn* by pointing the original remote
-   at the receiver from about 5 cm and pressing the button.
-4. **Spells**: name a slot (or use a suggestion), press **Record** 3 times, pick the IR code.
-5. **Live** tab: cast for a while and check what it recognizes in *Recent moves*.
+3. **Devices**: add your TV (brand or Detect), Test each button, pick the spell for it.
+4. **Home** tab: cast for a while and check what it recognizes in *Recent moves*; a "Maybe …?" has a
+   Re-train button.
+5. The **IR codes** tab still shows the wand's 12 raw slots (Learn / Library / Test / Clear).
 
 ### IR codes by hex
 

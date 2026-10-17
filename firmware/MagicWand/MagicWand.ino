@@ -85,12 +85,13 @@ static void sendInfo() {
   int n = snprintf(buf, sizeof(buf),
                    "INFO {\"name\":\"%s\",\"fw\":\"%s\",\"bat\":%u,\"volts\":%s,\"chg\":%d,\"axis\":[%s,%s,%s],"
                    "\"thr\":%s,\"sleep\":%lu,\"wake\":%u,\"haptics\":%u,\"motor\":%d,\"irrx\":%d,"
-                   "\"store\":\"%s\",\"g\":[",
+                   "\"store\":\"%s\",\"uid\":\"%08lX%08lX\",\"g\":[",
                    wandName(), FW_VERSION, power::batteryPercent(), FX(power::batteryVolts()).s, power::onCharger(),
                    FX(settings.axis[0], 3).s, FX(settings.axis[1], 3).s, FX(settings.axis[2], 3).s,
                    FX(settings.threshold).s,
                    (unsigned long)(settings.idleSleepMs / 1000), settings.wakeThreshold, settings.hapticsOn,
-                   HAS_MOTOR, HAS_IR_RECEIVER, storage::backendName());
+                   HAS_MOTOR, HAS_IR_RECEIVER, storage::backendName(),
+                   (unsigned long)(getDeviceUniqueId() >> 32), (unsigned long)(getDeviceUniqueId() & 0xFFFFFFFFul));
   for (int g = 0; g < kMaxGestures; g++)
     n += snprintf(buf + n, sizeof(buf) - n, "%s{\"n\":\"%s\",\"c\":%u,\"t\":%s,\"b\":%d}", g ? "," : "",
                   gestures[g].name, gestures[g].count, FX(gestures[g].threshold).s,
@@ -144,6 +145,31 @@ static void goSleep(const char* why) {
   power::deepSleep();
 }
 
+// Hex <-> bytes for the spell backup commands (DUMPG / GLOAD).
+static void toHexStr(const uint8_t* b, size_t n, char* out) {
+  static const char* H = "0123456789ABCDEF";
+  for (size_t i = 0; i < n; i++) { out[2 * i] = H[b[i] >> 4]; out[2 * i + 1] = H[b[i] & 15]; }
+  out[2 * n] = 0;
+}
+static int hexNib(char c) {
+  return (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+}
+
+// Nearest OTHER trained gesture to slot g's newest sample: lets the app warn
+// "this looks a lot like ZigZag" while you record a new spell.
+static void nearestOther(int g, const wand::Template& t, int& who, float& dist, float& thr) {
+  who = -1; dist = -1; thr = -1;
+  float best = 1e9f;
+  for (int o = 0; o < kMaxGestures; o++) {
+    if (o == g || !gestures[o].count) continue;
+    for (int k = 0; k < gestures[o].count && k < wand::kMaxSamples; k++) {
+      float d = wand::dtw(t, gestures[o].samples[k]);
+      if (d < best) { best = d; who = o; }
+    }
+  }
+  if (who >= 0) { dist = best; thr = gestures[who].threshold > 0 ? gestures[who].threshold : settings.threshold; }
+}
+
 // ------------------------------------------------------------------ commands
 static void handle(char* line) {
   char* save = nullptr;
@@ -183,6 +209,51 @@ static void handle(char* line) {
     setName(gestures[i1].name, wand::kNameLen, a2);
     storage::saveGesture(i1);
     comm::outf("OK GNAME %d", i1);
+  } else if (!strcmp(cmd, "GUNDO")) {  // GUNDO <g>: forget the newest sample (the app judged it a wrong move)
+    if (!validG(i1) || !gestures[i1].count) return comm::out("ERR GUNDO");
+    wand::GestureSlot& s = gestures[i1];
+    int n = s.count < wand::kMaxSamples ? s.count : wand::kMaxSamples;
+    int newest = (s.next + wand::kMaxSamples - 1) % wand::kMaxSamples;
+    // Keep the valid samples packed in [0, n-1): move the last one into the gap.
+    if (newest != n - 1) s.samples[newest] = s.samples[n - 1];
+    memset(&s.samples[n - 1], 0, sizeof(wand::Template));
+    s.count = n - 1;
+    s.next = s.count;
+    wand::updateThreshold(s, settings.threshold);
+    storage::saveGesture(i1);
+    comm::outf("OK GUNDO %d %u", i1, s.count);
+  } else if (!strcmp(cmd, "GTHR")) {  // GTHR <g> <thr>: one spell's acceptance distance (higher = more forgiving)
+    float v = a2 ? atof(a2) : 0;
+    if (!validG(i1) || !gestures[i1].count || v < 0.1f || v > 2.0f) return comm::out("ERR GTHR args: GTHR <g> <0.1..2>");
+    gestures[i1].threshold = v;
+    storage::saveGesture(i1);
+    comm::outf("OK GTHR %d %s", i1, FX(v).s);
+  } else if (!strcmp(cmd, "DUMPG")) {  // DUMPG <g>: a spell's samples as hex (app backup)
+    if (!validG(i1)) return comm::out("ERR DUMPG");
+    static char hx[sizeof(wand::GestureSlot) * 2 + 16];
+    const wand::GestureSlot& s = gestures[i1];
+    size_t n = offsetof(wand::GestureSlot, samples) + (s.count < wand::kMaxSamples ? s.count : wand::kMaxSamples) * sizeof(wand::Template);
+    toHexStr((const uint8_t*)&s, n, hx);
+    comm::outf("GDATA %d %s", i1, hx);
+  } else if (!strcmp(cmd, "GLOAD")) {  // GLOAD <g> <hex>: restore a spell from DUMPG
+    if (!validG(i1) || !a2) return comm::out("ERR GLOAD args");
+    size_t len = strlen(a2);
+    const size_t head = offsetof(wand::GestureSlot, samples);
+    if (len % 2 || len / 2 < head || len / 2 > sizeof(wand::GestureSlot)) return comm::out("ERR GLOAD size");
+    wand::GestureSlot s;
+    memset(&s, 0, sizeof(s));
+    uint8_t* b = (uint8_t*)&s;
+    for (size_t i = 0; i < len / 2; i++) {
+      int hi = hexNib(a2[2 * i]), lo = hexNib(a2[2 * i + 1]);
+      if (hi < 0 || lo < 0) return comm::out("ERR GLOAD hex");
+      b[i] = (uint8_t)(hi << 4 | lo);
+    }
+    if (s.count > wand::kMaxSamples || head + s.count * sizeof(wand::Template) != len / 2) return comm::out("ERR GLOAD count");
+    s.name[wand::kNameLen - 1] = 0;
+    s.next = s.count % wand::kMaxSamples;
+    gestures[i1] = s;
+    storage::saveGesture(i1);
+    comm::outf("OK GLOAD %d %u", i1, s.count);
   } else if (!strcmp(cmd, "GCLR")) {
     if (!validG(i1)) return comm::out("ERR GCLR");
     memset(&gestures[i1], 0, sizeof(wand::GestureSlot));
@@ -380,7 +451,9 @@ static void onSegment() {
     if (!s.name[0]) snprintf(s.name, wand::kNameLen, "move%d", modeTarget);
     wand::addSample(s, t, settings.threshold);
     if (!storage::saveGesture(modeTarget)) comm::out("ERR storage full or failed");
-    comm::outf("REC %d ok %u %s", modeTarget, s.count, FX(s.threshold).s);
+    int who; float dist, othr;
+    nearestOther(modeTarget, t, who, dist, othr);
+    comm::outf("REC %d ok %u %s near %d %s %s", modeTarget, s.count, FX(s.threshold).s, who, FX(dist, 3).s, FX(othr, 3).s);
     haptics::play(haptics::kSaved);
     status::flash(status::kSaved);
     mode = kNormal;

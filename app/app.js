@@ -1,79 +1,263 @@
 // app.js — Wand Workshop: configure the wand over Web Bluetooth.
 // Protocol reference: docs/PROTOCOL.md
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=11';
-import { LIBRARY } from './ir-presets.js?v=11';
-import { initTraining } from './training.js?v=3';
-import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=2';
+//
+// Tabs: Home (live motion, last spell), Spells, Devices, Knight, Wizard (the
+// first-time setup), Settings (backups), IR codes (raw slots), Log.
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=12';
+import { LIBRARY, learnedKey } from './ir-presets.js?v=12';
+import { initTraining } from './training.js?v=4';
+import { initSpells } from './spells.js?v=1';
+import { initDevices } from './devices.js?v=1';
+import { initKnight } from './knight.js?v=1';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=1';
+import { loadProfile, saveProfile, wandId, wandIsEmpty, factoryNamed, listBackups, addBackup, lastWand } from './profile.js?v=1';
+import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=3';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const toWire = (s) => (s || '').trim().replace(/[^A-Za-z0-9-]+/g, '_').slice(0, 15) || '-';
 const fromWire = (s) => (s || '').replace(/_/g, ' ');
-
-// Suggested moves: all built from grip-independent motions (see docs/GESTURES.md).
-const SUGGESTED = [
-  { name: 'Aperio', glyph: '🗝', move: 'Twist the wand like turning a key (clockwise).', use: 'TV power' },
-  { name: 'Lux', glyph: '⤴', move: 'Quick flick of the tip upward, then back.', use: 'Volume up / AC on' },
-  { name: 'Umbra', glyph: '⤵', move: 'Firm slash downward.', use: 'Volume down / AC off' },
-  { name: 'Tacet', glyph: '➶', move: 'Stab straight forward, like a poke.', use: 'Mute' },
-  { name: 'Orbis', glyph: '◯', move: 'Draw a circle with the tip.', use: 'Input / source' },
-  { name: 'Ventus', glyph: '〰', move: 'Swish to the right, then flick down.', use: 'AC power' },
-  { name: 'Voco', glyph: '→', move: 'Sweep the tip to the right.', use: 'Channel up' },
-  { name: 'Fulgur', glyph: 'ϟ', move: 'Draw a Z (lightning bolt).', use: 'Anything fun' },
-];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const state = {
   link: null,
   info: null,
+  id: null,          // wand ID (chip ID) -> profile, backups
+  profile: null,
+  checked: false,    // first INFO of this connection handled (setup / restore)
   recording: -1,
   learning: -1,
-  captured: {}, // slot -> '0xF2A0D5 x3 · 56 kHz' (codes learned this session, as IrDump prints them)
-  lib: null, // open library dialog: { slot, spell, learnSlot }
-  lastDevice: null, // BLE device to offer for reconnect
-  feats: [], // [right, up, twist, thrust]
-  pendingCodeDump: [],
-  backup: null,
+  captured: {},      // slot -> '0xF2A0D5 x3 · 56 kHz' (codes learned this session)
+  lib: null,         // open library dialog: { slot, spell, learnSlot }
+  lastDevice: null,  // BLE device to reconnect to
+  feats: [],         // [right, up, twist, thrust]
+  backupBusy: false,
 };
 
-// ------------------------------------------------------------------ connection
-// Nothing works without a wand, so a dialog asks for one whenever none is
-// connected (at start and after every disconnect).
-const demo = new URLSearchParams(location.search).has('demo');
-const connectDlg = $('#connectDlg');
+// ------------------------------------------------------------------ waiting for replies
+// expect(test, ms): resolves with the first line for which test(line) is true.
+const waiters = [];
+function expect(test, ms = 4000) {
+  return new Promise((resolve) => {
+    const w = { test, resolve, timer: setTimeout(() => { waiters.splice(waiters.indexOf(w), 1); resolve(null); }, ms) };
+    waiters.push(w);
+  });
+}
+function feedWaiters(line) {
+  for (const w of [...waiters]) if (w.test(line)) { clearTimeout(w.timer); waiters.splice(waiters.indexOf(w), 1); w.resolve(line); }
+}
 
-// Training tab (the wizard). It reads the motion stream and REC/INFO lines.
-const training = initTraining({
-  send: (line) => send(line),
-  connected: () => !!state.link,
-  info: () => state.info,
-  openLibrary: (o) => openLibrary(o),
-  log: (text) => logLine(text, 'in'),
-  perform: demo ? (move, speed) => state.link?.perform?.(move, speed) : null,
+// ------------------------------------------------------------------ helpers shared by the tabs
+const gestures = () => state.info?.g || [];
+const codes = () => state.info?.c || [];
+/** Spell slot for a name: the one already called that, else an empty one. */
+function slotFor(wire) {
+  const gs = gestures(), n = String(wire || '').toLowerCase();
+  let s = gs.findIndex((g) => g.n.toLowerCase() === n);
+  if (s < 0) s = gs.findIndex((g) => !g.c && !g.n);
+  if (s < 0) s = gs.findIndex((g) => !g.c);
+  return s;
+}
+/** The skip-th free IR slot (codes sent in a row don't see the INFO update in between). */
+function freeSlot(skip = 0) {
+  const free = codes().map((c, i) => (c.k ? -1 : i)).filter((i) => i >= 0);
+  return free[skip] ?? -1;
+}
+const codeLabel = (c) => {
+  const n = codes()[c]?.n;
+  if (!n) return t('Code {n}', { n: c + 1 });
+  const p = state.profile;
+  for (const d of p?.devices || []) for (const k of d.keys) if (k.slot === c) return `${d.name} · ${t(k.label, k.vars)}`;
+  if (n === 'Knight_hit') return `⚔️ ${t('Hit the knight')}`;
+  if (n === 'Knight_heal') return `✨ ${t('Heal the knight')}`;
+  return fromWire(n);
+};
+
+/** Learn one button from a remote into a scratch IR slot, read it back, free the slot. */
+async function capture(name) {
+  if (!state.link) return { ok: false, why: t('Connect the wand first') };
+  const free = codes().map((c, i) => (c.k ? -1 : i)).filter((i) => i >= 0);
+  const s = free[free.length - 1];
+  if (s == null) return { ok: false, why: t('All 12 IR slots are used. Clear one in the IR codes tab') };
+  send(`LEARN ${s} ${toWire(name)}`);
+  const res = await expect((l) => new RegExp(`^LEARN ${s} (ok|timeout|unsupported)`).test(l), 25000);
+  const p = (res || '').split(' ');
+  if (p[2] !== 'ok') return { ok: false, why: p[2] === 'unsupported' ? t("Received something, but couldn't decode it. Try again, closer") : t('Nothing received. Try closer, within 10 cm') };
+  send(`DUMPC ${s}`);
+  const dump = await expect((l) => l.startsWith(`CODE ${s} `), 5000);
+  send(`CCLR ${s}`);
+  if (!dump) return { ok: false, why: t('The wand did not send the code back. Try again.') };
+  const [, , khz, , list] = dump.split(' ');
+  return { ok: true, key: learnedKey(p[3], p[4]), khz: +khz, d: list.split(',').map(Number) };
+}
+
+function profile() { return state.profile; }
+function storeProfile() { if (state.profile) saveProfile(state.profile); }
+
+// ------------------------------------------------------------------ backups
+// A full copy of the wand: spells (DUMPG), IR codes (DUMPC), bindings, settings
+// and this browser's profile. Requests close together are merged.
+let backupTimer = 0;
+function backup(reason) {
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(() => takeBackup(reason), 2500);
+}
+async function takeBackup(reason) {
+  if (!state.link || !state.info || state.backupBusy) return;
+  state.backupBusy = true;
+  try {
+    send('HELLO');
+    await expect((l) => l.startsWith('INFO '), 4000);
+    const info = state.info;
+    const out = { reason, name: info.name, fw: info.fw, settings: { thr: info.thr, sleep: info.sleep, wake: info.wake, haptics: info.haptics },
+      binds: gestures().map((g) => g.b), gestures: [], codes: [],
+      profile: { owner: state.profile.owner, devices: state.profile.devices, knight: state.profile.knight } };
+    for (const [i, g] of gestures().entries()) {
+      if (!g.c) continue;
+      send(`DUMPG ${i}`);
+      const l = await expect((x) => x.startsWith(`GDATA ${i} `), 4000);
+      if (!l) throw new Error('DUMPG');
+      out.gestures.push({ slot: i, hex: l.split(' ')[2] });
+    }
+    for (const [i, c] of codes().entries()) {
+      if (!c.k) continue;
+      send(`DUMPC ${i}`);
+      const l = await expect((x) => x.startsWith(`CODE ${i} `), 4000);
+      if (!l) throw new Error('DUMPC');
+      const [, , khz, name, list] = l.split(' ');
+      out.codes.push({ slot: i, khz: +khz, name, d: list.split(',').map(Number) });
+    }
+    if (!out.gestures.length && !out.codes.length) return;
+    addBackup(state.id, out);
+    renderBackups();
+    logLine(`backup saved (${reason}): ${out.gestures.length} spells, ${out.codes.length} IR codes`, 'in');
+  } catch (e) {
+    logLine(`backup failed: ${e.message} (the wand firmware may be older than 0.5.0)`, 'err');
+  } finally {
+    state.backupBusy = false;
+  }
+}
+
+async function restore(b) {
+  $('#restoreDlg').open && $('#restoreDlg').close();
+  toast(t('Restoring your wand…'));
+  const ok = async (line, prefix) => { send(line); return !!(await expect((l) => l.startsWith(prefix) || l.startsWith('ERR'), 4000)); };
+  for (const g of b.gestures) await ok(`GLOAD ${g.slot} ${g.hex}`, `OK GLOAD ${g.slot}`);
+  for (const c of b.codes) await ok(`CODE ${c.slot} ${c.khz} ${c.name} ${c.d.join(',')}`, `OK CODE ${c.slot}`);
+  for (const [g, c] of b.binds.entries()) if (c >= 0) await ok(`BIND ${g} ${c}`, `OK BIND ${g}`);
+  for (const [k, v] of Object.entries(b.settings)) await ok(`SET ${k} ${v}`, `OK SET ${k}`);
+  Object.assign(state.profile, b.profile, { setupDone: true, setupStep: 'done' });
+  storeProfile();
+  send('HELLO');
+  toast(t('Your wand is back as it was ✓'));
+  const name = (b.name || '').replace(/^Wand-/, '');
+  if (name && !factoryNamed({ name: b.name, uid: state.info?.uid })) { await sleep(800); send(`SET name ${name}`); }
+}
+
+function offerRestore() {
+  const list = listBackups(state.id);
+  $('#restoreText').textContent = t('This wand was reset to factory settings. Do you want to restore your settings from this browser?');
+  $('#restoreList').innerHTML = backupItems(list);
+  $('#restoreDlg').showModal();
+}
+$('#restoreList').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-restore]');
+  if (b) restore(listBackups(state.id)[+b.dataset.restore]);
 });
-connectDlg.addEventListener('cancel', (e) => e.preventDefault()); // Esc can't dismiss it
+$('#restoreNo').addEventListener('click', () => {
+  $('#restoreDlg').close();
+  state.profile.setupDone = false;
+  state.profile.setupStep = 'names';
+  storeProfile();
+  startSetup();
+});
+const backupItems = (list) => list.map((b, i) => `<li><span>🗂️ <b>${new Date(b.ts).toLocaleString()}</b>
+  <span class="muted small">${t('{s} spells · {c} IR codes · {d} devices', { s: b.gestures.length, c: b.codes.length, d: b.profile?.devices?.length || 0 })}</span></span>
+  <button class="small" data-restore="${i}">${t('Restore')}</button></li>`).join('');
+function renderBackups() {
+  const list = state.id ? listBackups(state.id) : [];
+  $('#backupList').innerHTML = list.length ? backupItems(list) : `<li class="muted">${t('No backups yet.')}</li>`;
+}
+$('#backupList').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-restore]');
+  if (b && confirm(t('Replace what is on the wand now with this copy?'))) restore(listBackups(state.id)[+b.dataset.restore]);
+});
+$('#backupBtn').addEventListener('click', () => takeBackup('manual'));
+$('#setupBtn').addEventListener('click', () => { state.profile.setupStep = 'intro'; storeProfile(); startSetup(); });
+
+// ------------------------------------------------------------------ tabs' modules
+const demo = new URLSearchParams(location.search).has('demo');
+const perform = demo ? (move, speed) => state.link?.perform?.(move, speed) : null;
+const shared = {
+  send: (l) => send(l), connected: () => !!state.link, info: () => state.info, log: (x) => logLine(x, 'in'), perform,
+  profile, saveProfile: storeProfile, slotFor, freeSlot, codeLabel, capture, backup, toast: (x, e) => toast(x, e),
+  practice: (on) => send(`PRACTICE ${on ? 1 : 0}`),
+};
+const training = initTraining({ ...shared, renameWand: (n) => send(`SET name ${n}`), goto: (tab, what) => goto(tab, what) });
+const spells = initSpells({ ...shared, goto: (tab) => showTab(tab) });
+const devices = initDevices(shared);
+const knight = initKnight(shared);
+
+function goto(tab, what) {
+  showTab(tab);
+  if (tab === 'devices' && what === 'add') devices.openWizard();
+  if (tab === 'knight' && what === 'start') knight.start();
+}
+function startSetup() { showTab('training'); training.begin(); }
+
+// ------------------------------------------------------------------ connection
+// No known wand: the Summon window. A known wand: reconnect by itself, with a
+// small bar ("Connect to a new wand"), and keep trying while it sleeps.
+const connectDlg = $('#connectDlg');
+connectDlg.addEventListener('cancel', (e) => e.preventDefault());  // Esc can't dismiss it
+const demoKnown = () => { try { return localStorage.getItem('demoWandKnown') ? [{ name: 'Wand (demo)', id: 'demo', demo: true }] : []; } catch { return []; } };
+const knownList = async () => (demo ? demoKnown() : await knownWands());
 
 async function showConnect(msg = '') {
   document.body.classList.add('offline');
+  $('#reconnectBar').hidden = true;
   $('#connectMsg').textContent = msg;
   $('#noBle').hidden = bluetoothAvailable() || demo;
   $('#findBtn').hidden = !bluetoothAvailable() && !demo;
   $('#demoLink').hidden = demo;
   $('#findBtn').textContent = demo ? t('Summon the demo wand') : t('Search for wands…');
-  // Wands this browser has connected to before (Chrome remembers them)
-  const known = demo ? [] : await knownWands();
-  if (state.lastDevice && !known.includes(state.lastDevice)) known.unshift(state.lastDevice);
-  $('#knownWands').innerHTML = known.map((d, i) =>
-    `<button class="wand-pick" data-i="${i}"><span class="glyph">✦</span><b>${esc(d.name || 'Wand')}</b><span class="muted small">${t('reconnect')}</span></button>`).join('');
-  $('#knownWands').onclick = (e) => {
-    const b = e.target.closest('.wand-pick');
-    if (b) connectTo(known[+b.dataset.i]);
-  };
+  $('#knownWands').innerHTML = '';
   if (!connectDlg.open) connectDlg.showModal();
 }
 
-async function connectTo(device) {
+let autoGen = 0;
+async function autoReconnect(known, why = '') {
+  if (state.link) return;
+  const g = ++autoGen;
+  document.body.classList.add('offline');
+  if (connectDlg.open) connectDlg.close();
+  const last = lastWand.get();
+  let target = known.find((d) => d.id === last?.id) || known[0];
+  const bar = $('#reconnectBar');
+  bar.hidden = false;
+  const others = $('#otherWands');
+  others.hidden = known.length < 2;
+  others.innerHTML = known.map((d, i) => `<option value="${i}" ${d === target ? 'selected' : ''}>${esc(d.name || 'Wand')}</option>`).join('');
+  others.onchange = () => { target = known[+others.value]; tries = 0; };
+  let tries = 0;
+  while (g === autoGen && !state.link) {
+    tries++;
+    $('#reconnectMsg').textContent = (why && tries === 1 ? why + ' ' : '') +
+      t('Reconnecting to {name}… pick it up to wake it.', { name: target.name || 'Wand' }) + (tries > 1 ? ` (${tries})` : '');
+    const ok = await connectTo(target.demo ? null : target, { quiet: true });
+    if (ok || g !== autoGen) return;
+    await sleep(3000);
+  }
+}
+$('#newWandBtn').addEventListener('click', () => {
+  autoGen++;
+  if (demo) try { sessionStorage.removeItem('mockWand'); } catch { /* */ }
+  connectTo(null);
+});
+
+async function connectTo(device, { quiet = false } = {}) {
   const link = demo ? new MockWand() : new BleWand(device);
-  const progress = (msg) => { $('#connectMsg').textContent = msg; console.log('[wand]', msg); };
+  const progress = (msg) => { if (!quiet) $('#connectMsg').textContent = msg; console.log('[wand]', msg); };
   progress(device ? t('Reaching {name}… (pick the wand up to wake it)', { name: device.name }) : '');
   link.onClose(() => progress(t('The wand dropped the connection while setting up. Tap its button to restart it and try again.')));
   connectDlg.classList.add('busy');
@@ -92,25 +276,30 @@ async function connectTo(device) {
   } catch (e) {
     connectDlg.classList.remove('busy');
     console.warn('[wand] connect failed', e);
-    if (e.name === 'NotFoundError' && /cancel/i.test(e.message)) return progress(''); // chooser closed
     link.onClose(() => {});
     link.disconnect();
+    if (e.name === 'NotFoundError' && /cancel/i.test(e.message)) { progress(''); return false; }  // chooser closed
     progress(t("Couldn't use the wand: {why}.", { why: e.message }));
-    return;
+    return false;
   }
   connectDlg.classList.remove('busy');
+  autoGen++;
   state.link = link;
-  state.lastDevice = link.device || null;
-  connectDlg.close();
+  state.lastDevice = link.device || (demo ? { name: link.name, id: 'demo', demo: true } : null);
+  state.checked = false;
+  lastWand.set({ id: link.device?.id || 'demo', name: link.name });
+  if (demo) try { localStorage.setItem('demoWandKnown', '1'); } catch { /* */ }
+  if (connectDlg.open) connectDlg.close();
+  $('#reconnectBar').hidden = true;
   document.body.classList.remove('offline');
   send('HELLO');
   training.onConnect();
-  if (training.firstTime()) showTab('training');  // first visit: the wizard teaches the moves
   updateStream();
+  return true;
 }
 
 $('#findBtn').addEventListener('click', () => connectTo(null));
-$('#connectBtn').addEventListener('click', () => { stopStream(); setTimeout(() => state.link?.disconnect(), 300); });
+$('#connectBtn').addEventListener('click', () => { state.release = true; stopStream(); setTimeout(() => state.link?.disconnect(), 300); });
 
 // Stop the motion stream BEFORE the page goes away. If the link drops while
 // the wand is in the middle of sending a stream line, the Bluetooth library
@@ -130,21 +319,9 @@ document.addEventListener('visibilitychange', () => {
   else updateStream();
 });
 // TEST window.addEventListener('pagehide', stopStream);
-// Closing or reloading while connected: send STREAM 0 and ask "Leave site?".
-// Chrome doesn't wait for Bluetooth writes once the page is going away; the
-// dialog keeps the page alive long enough for STREAM 0 to reach the wand.
-// (Chrome shows its own text; pages can't set the message.)
-/* TEST
-window.addEventListener('beforeunload', (e) => {
-  if (!state.link) return;
-  stopStream();
-  e.preventDefault();
-  e.returnValue = '';
-  setTimeout(updateStream, 1000);  // only runs if the user chose to stay
-});
-*/
 
 function onClosed() {
+  if (!state.link) return;  // already handled (a link can report its end twice)
   const name = state.info?.name || state.link?.name || t('the wand');
   const wasOn = !!state.link;
   state.link = null;
@@ -153,32 +330,33 @@ function onClosed() {
   training.onDisconnect();
   setStatus(t('No wand connected'));
   render();
-  if ($('#libDlg').open) $('#libDlg').close();
-  if (state.reconnectAfterRestart && state.lastDevice) {
+  for (const d of ['#libDlg', '#spellDlg', '#devDlg', '#restoreDlg']) if ($(d).open) $(d).close();
+  const dev = state.lastDevice;
+  if (state.release || !dev) { state.release = false; return knownList().then((k) => (k.length ? autoReconnect(k, t('Wand released.')) : showConnect())); }
+  if (state.reconnectAfterRestart) {
     state.reconnectAfterRestart = false;
-    showConnect(t('The wand is restarting with its new name…'));
-    setTimeout(() => connectTo(state.lastDevice), 3000);
-    return;
+    return sleep(2500).then(() => autoReconnect([dev], t('The wand is restarting with its new name…')));
   }
-  showConnect(wasOn ? t('Lost {name}. It may have fallen asleep: pick it up and reconnect.', { name }) : '');
+  autoReconnect([dev], wasOn ? t('Lost {name}. It may have fallen asleep.', { name }) : '');
 }
 
 function send(line) {
   if (!state.link) return toast(t('Connect the wand first'), true);
   logLine(line, 'out');
   state.link.send(line);
+  return true;
 }
 
-function setStatus(t) { $('#status').textContent = t; }
+function setStatus(x) { $('#status').textContent = x; }
 
 // ------------------------------------------------------------------ incoming
 function onLine(line) {
   const [tag, ...p] = line.split(' ');
-  if (tag !== 'F') logLine(line, tag === 'ERR' ? 'err' : 'in');
+  if (tag !== 'F' && tag !== 'GDATA') logLine(line, tag === 'ERR' ? 'err' : 'in');
   switch (tag) {
     case 'INFO':
       try { state.info = JSON.parse(line.slice(5)); } catch { return toast(t('Bad INFO from wand'), true); }
-      render();
+      onInfo();
       break;
     case 'F':
       state.feats.push(p.slice(0, 4).map(Number));
@@ -197,13 +375,12 @@ function onLine(line) {
       else if (p[0] === 'fail') toast(t('Calibration failed: keep the wand still, tip up'), true);
       else toast(t('Hold the wand still with the tip pointing straight up…'));
       break;
-    case 'CODE': onCodeDump(p); break;
     case 'OK':
-      if (['GNAME', 'GCLR', 'CODE', 'CNAME', 'CCLR', 'BIND', 'SET', 'RESET'].includes(p[0])) send('HELLO');
+      if (['GNAME', 'GCLR', 'CODE', 'CNAME', 'CCLR', 'BIND', 'SET', 'RESET', 'GUNDO', 'GTHR', 'GLOAD'].includes(p[0])) send('HELLO');
       if (p[0] === 'CODE' || p[0] === 'CCLR') delete state.captured[+p[1]];  // slot replaced: old capture info is stale
       if (p[0] === 'RESET') state.captured = {};
-      if (p[0] === 'SEND' || p[0] === 'TRY') toast(t('IR sent. Did the device react?'));
-      if (p[0] === 'RESET') toast(t('Wand reset to factory settings'));
+      if ((p[0] === 'SEND' || p[0] === 'TRY') && !knightPairing()) toast(t('IR sent. Did the device react?'));
+      if (p[0] === 'RESET') { toast(t('Wand reset to factory settings')); state.checked = false; }
       if (p[0] === 'SET' && p[1] === 'name') {
         state.reconnectAfterRestart = true;
         toast(t('Renamed to {name}. The wand restarts and reconnects…', { name: p[2] }));
@@ -213,52 +390,58 @@ function onLine(line) {
     case 'SLEEP': toast(t('Wand is going to sleep 💤')); break;
     case 'ERR': toast(line.slice(4), true); break;
   }
+  feedWaiters(line);
   training.onLine(tag, p);
+  spells.onLine(tag, p);
 }
+const knightPairing = () => !!document.querySelector('#knightArea .steps, #knightArea [data-act=pair-done]') || false;
 
-function gestureName(g) {
-  const n = state.info?.g?.[g]?.n;
-  return n ? fromWire(n) : g >= 0 ? t('Move {n}', { n: g + 1 }) : t('Unknown');
-}
-function codeName(c) {
-  const n = state.info?.c?.[c]?.n;
-  return c < 0 ? t('nothing') : n ? fromWire(n) : t('Code {n}', { n: c + 1 });
+// First INFO of a connection: new wand -> setup; reset wand known here -> restore.
+function onInfo() {
+  const id = wandId(state.info, state.link);
+  if (id !== state.id) { state.id = id; state.profile = loadProfile(id); }
+  render();
+  knight.onInfo();
+  if (state.checked) return;
+  state.checked = true;
+  const p = state.profile;
+  if (wandIsEmpty(state.info) && listBackups(id).length) return offerRestore();
+  if (!p.setupDone && (factoryNamed(state.info) || (p.setupStep && p.setupStep !== 'done'))) return startSetup();
+  if (!p.setupDone) { p.setupDone = true; p.setupStep = 'done'; storeProfile(); }  // a wand set up before this app version
 }
 
 function onMatch(g, dist, second, accepted) {
   const li = document.createElement('li');
   li.className = accepted ? 'ok' : 'no';
-  li.textContent = accepted
-    ? t('{name}  (score {score})', { name: gestureName(g), score: dist.toFixed(2) })
-    : g >= 0 ? t('not sure (closest: {name}, {score})', { name: gestureName(g), score: dist.toFixed(2) }) : t('motion (no spells trained)');
+  const gs = gestures()[g];
+  const sp = gs ? spellOfName(gs.n) : null;
+  if (g < 0) li.textContent = t('motion (no spells trained)');
+  else if (accepted) li.innerHTML = `${spellIcon(sp, { size: 30, initial: gs.n })}<span>${esc(displayName(gs.n))}</span><span class="muted small">${dist.toFixed(2)}</span>`;
+  else li.innerHTML = `${spellIcon(sp, { size: 30, unsure: true, initial: gs.n })}<span>${esc(t('Maybe {name}?', { name: displayName(gs.n) }))}</span>
+    <button class="small" data-retrain="${g}">${t('Re-train')}</button>`;
   const h = $('#history');
   h.prepend(li);
   while (h.children.length > 12) h.lastChild.remove();
 }
+$('#history').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-retrain]');
+  if (b) { showTab('spells'); spells.open({ slot: +b.dataset.retrain }); }
+});
 
 function onCast(g, c, fired) {
   const el = $('#lastCast');
   el.classList.remove('muted', 'flash');
   void el.offsetWidth;
   el.classList.add('flash');
-  const what = c < 0 ? t('no IR code bound yet') : fired ? t('sent “{code}”', { code: codeName(c) }) : t('would send “{code}” (not sent while charging)', { code: codeName(c) });
-  el.innerHTML = `✨ ${esc(gestureName(g))}<span class="sub">${esc(what)}</span>`;
+  const gs = gestures()[g];
+  const what = c < 0 ? t('no action yet') : fired ? t('sent “{code}”', { code: codeLabel(c) }) : t('would send “{code}” (not sent while charging)', { code: codeLabel(c) });
+  el.innerHTML = `<div class="cast-row">${spellIcon(gs ? spellOfName(gs.n) : null, { size: 84, initial: gs?.n })}
+    <div><b>${esc(gs ? displayName(gs.n) : t('Unknown'))}</b><span class="sub">${esc(what)}</span></div></div>`;
 }
 
 function onRec(g, what, rest) {
-  if (what === 'armed') {
-    state.recording = g;
-    setSpellState(g, t('Get ready… tick, tick, GO! (5 s)'));
-  } else if (what === 'ok') {
-    state.recording = -1;
-    const n = +rest[0];
-    toast(n >= 3 ? t('Saved sample {n}. {name} is ready!', { n, name: gestureName(g) }) : t('Saved sample {n} of 3', { n }));
-    send('HELLO');
-  } else if (what === 'timeout') {
-    state.recording = -1;
-    setSpellState(g, t('No move detected. Try again with a brisker motion.'));
-    renderSpells();
-  }
+  if (what === 'armed') state.recording = g;
+  else if (what === 'ok' || what === 'timeout') { state.recording = -1; if (what === 'ok') send('HELLO'); }
 }
 
 // LEARN c count 3 / count 2 / count 1 / go / waiting /
@@ -285,9 +468,12 @@ function onLearn(c, what, n, hex, reps, khz) {
 // ------------------------------------------------------------------ rendering
 function render() {
   renderStatus();
-  renderSpells();
+  spells.render();
+  devices.render();
+  knight.render();
   renderCodes();
   renderSettings();
+  renderBackups();
 }
 
 function renderStatus() {
@@ -295,90 +481,9 @@ function renderStatus() {
   if (!state.link) return;
   if (!i) return setStatus(t('{name}: loading…', { name: state.link.name }));
   const bat = i.chg ? t('⚡ charging ({pct}%)', { pct: i.bat }) : `🔋 ${i.bat}%`;
-  setStatus(`${i.name || state.link.name} · ${bat} · fw ${i.fw}`);
+  const who = state.profile?.owner ? t('{owner}’s {wand}', { owner: state.profile.owner, wand: i.name }) : i.name;
+  setStatus(`${who} · ${bat} · fw ${i.fw}`);
 }
-
-function codeOptions(selected) {
-  const codes = state.info?.c || [];
-  let html = `<option value="-">${t('— no IR code —')}</option>`;
-  codes.forEach((c, i) => {
-    if (c.k) html += `<option value="${i}" ${i === selected ? 'selected' : ''}>${esc(codeName(i))}</option>`;
-  });
-  return html;
-}
-
-function renderSpells() {
-  const grid = $('#spellGrid');
-  const gs = state.info?.g || Array.from({ length: 8 }, () => ({ n: '', c: 0, t: 0, b: -1 }));
-  grid.innerHTML = gs.map((g, i) => `
-    <div class="spell ${state.recording === i ? 'recording' : ''}" data-g="${i}">
-      <input type="text" value="${esc(fromWire(g.n))}" placeholder="${t('Move {n} name', { n: i + 1 })}" maxlength="15" data-act="name" />
-      <div class="row">
-        <span class="dots" title="${t('{n} of 4 samples', { n: g.c })}">${[0, 1, 2, 3].map((k) => `<i class="${k < g.c ? 'on' : ''}"></i>`).join('')}</span>
-        <span class="muted small">${g.c ? (g.c >= 3 ? t('trained') : t('{n}/3 samples', { n: g.c })) : t('empty')}</span>
-      </div>
-      <div class="row">
-        <button class="small primary" data-act="rec" ${state.link ? '' : 'disabled'}>${g.c ? t('Record another') : t('Record')}</button>
-        <button class="small" data-act="clear" ${g.c && state.link ? '' : 'disabled'}>${t('Clear')}</button>
-      </div>
-      <div class="row"><span class="small muted">${t('sends')}</span>
-        <select data-act="bind" ${state.link ? '' : 'disabled'}>${codeOptions(g.b)}</select>
-        <button class="small" data-act="lib" title="${t('Choose a device and button from the library')}" ${state.link ? '' : 'disabled'}>📜 ${t('Library')}</button>
-      </div>
-      <div class="state"></div>
-    </div>`).join('');
-}
-
-function setSpellState(g, text) {
-  const el = document.querySelector(`.spell[data-g="${g}"]`);
-  if (!el) return;
-  el.classList.toggle('recording', state.recording === g);
-  el.querySelector('.state').textContent = text;
-}
-
-$('#spellGrid').addEventListener('click', (e) => {
-  const act = e.target.dataset.act;
-  const card = e.target.closest('.spell');
-  if (!card || !act) return;
-  const g = +card.dataset.g;
-  if (act === 'rec') {
-    const name = card.querySelector('[data-act=name]').value;
-    send(`REC ${g}${name.trim() ? ' ' + toWire(name) : ''}`);
-  } else if (act === 'clear') {
-    if (confirm(t('Forget all samples for {name}?', { name: gestureName(g) }))) send(`GCLR ${g}`);
-  } else if (act === 'lib') {
-    openLibrary({ spell: g });
-  }
-});
-$('#spellGrid').addEventListener('change', (e) => {
-  const card = e.target.closest('.spell');
-  if (!card) return;
-  const g = +card.dataset.g;
-  if (e.target.dataset.act === 'name') {
-    if (state.info?.g?.[g]?.c) send(`GNAME ${g} ${toWire(e.target.value)}`);
-  } else if (e.target.dataset.act === 'bind') {
-    send(`BIND ${g} ${e.target.value}`);
-  }
-});
-
-function renderSuggestions() {
-  $('#suggestions').innerHTML = SUGGESTED.map((s, k) => `
-  <div class="sugg"><span class="glyph">${s.glyph}</span><b>${esc(s.name)}</b>
-    <p>${esc(t(s.move))}<br/>${t('Good for: {use}', { use: esc(t(s.use)) })}</p>
-    <button class="small" data-sugg="${k}">${t('Use in next free slot')}</button></div>`).join('');
-}
-renderSuggestions();
-$('#suggestions').addEventListener('click', (e) => {
-  const k = e.target.dataset.sugg;
-  if (k === undefined) return;
-  const gs = state.info?.g || [];
-  let slot = gs.findIndex((g) => !g.c);
-  if (slot < 0) return toast(t('All 8 slots are used. Clear one first'), true);
-  const input = document.querySelector(`.spell[data-g="${slot}"] [data-act=name]`);
-  input.value = SUGGESTED[k].name;
-  input.focus();
-  toast(t('Slot {n} named {name}. Press Record and do the move.', { n: slot + 1, name: SUGGESTED[k].name }));
-});
 
 function renderCodes() {
   const cs = state.info?.c || Array.from({ length: 12 }, () => ({ n: '', k: 0, l: 0 }));
@@ -387,7 +492,7 @@ function renderCodes() {
       <span class="idx">${i + 1}</span>
       <div>
         <input value="${esc(fromWire(c.n))}" placeholder="${c.k ? t('Code {n}', { n: i + 1 }) : t('empty slot')}" maxlength="15" data-act="name" ${c.k && state.link ? '' : 'disabled'} />
-        <div class="meta">${state.learning === i ? esc(state.learnMsg || t('Get ready…')) : c.k && state.captured[i] ? esc(state.captured[i])  : c.k ? t('{n} pulses · {khz} kHz', { n: c.l, khz: c.k }) : '—'}</div>
+        <div class="meta">${state.learning === i ? esc(state.learnMsg || t('Get ready…')) : c.k && state.captured[i] ? esc(state.captured[i]) : c.k ? t('{n} pulses · {khz} kHz', { n: c.l, khz: c.k }) : '—'}</div>
       </div>
       <div class="actions">
         <button class="small" data-act="learn" ${state.link && state.info?.irrx ? '' : 'disabled'}>${t('Learn')}</button>
@@ -406,7 +511,7 @@ $('#codeList').addEventListener('click', (e) => {
   const name = row.querySelector('input').value;
   if (act === 'learn') send(`LEARN ${c}${name.trim() ? ' ' + toWire(name) : ''}`);
   else if (act === 'send') send(`SEND ${c}`);
-  else if (act === 'clear') confirm(t('Clear {name}?', { name: codeName(c) })) && send(`CCLR ${c}`);
+  else if (act === 'clear') confirm(t('Clear {name}?', { name: codeLabel(c) })) && send(`CCLR ${c}`);
   else if (act === 'preset') openLibrary({ slot: c });
 });
 $('#codeList').addEventListener('change', (e) => {
@@ -414,10 +519,9 @@ $('#codeList').addEventListener('change', (e) => {
   if (row && e.target.dataset.act === 'name') send(`CNAME ${row.dataset.c} ${toWire(e.target.value)}`);
 });
 
-// ------------------------------------------------------------------ library dialog
+// ------------------------------------------------------------------ library dialog (IR codes tab)
 // Device -> brand -> button, Test it on the real device, then save it to the
-// wand and (optionally) bind it to a spell. Opened from a spell card
-// ("📜 Library") or from an IR code slot ("Library").
+// wand and (optionally) bind it to a spell.
 const libDlg = $('#libDlg');
 const libDev = $('#libDevice'), libBrand = $('#libBrand'), libAct = $('#libAction'), libSpell = $('#libSpell');
 const fillLibDevices = () => {
@@ -429,8 +533,7 @@ fillLibDevices();
 const libEntry = () => LIBRARY[libDev.value]?.[libBrand.value];
 const libAction = () => libEntry()?.actions[+libAct.value];
 const libName = () => toWire(`${libEntry().short}_${libAction().short}`);
-const slotByName = (name) => (state.info?.c || []).findIndex((c) => c.k && c.n === name);
-const freeSlot = () => (state.info?.c || []).findIndex((c) => !c.k);
+const slotByName = (name) => codes().findIndex((c) => c.k && c.n === name);
 
 function fillLibBrands() {
   libBrand.innerHTML = Object.keys(LIBRARY[libDev.value]).map((b) => `<option value="${esc(b)}">${esc(t(b))}</option>`).join('');
@@ -466,10 +569,9 @@ libAct.addEventListener('change', onLibAction);
 function openLibrary({ spell = -1, slot = -1 } = {}) {
   if (!state.link) return;
   state.lib = { spell, slot, learnSlot: -1 };
-  const gs = state.info?.g || [];
   libSpell.innerHTML = `<option value="-1">${t('— just save the code —')}</option>` +
-    gs.map((g, i) => `<option value="${i}" ${i === spell ? 'selected' : ''}>${esc(gestureName(i))}${g.c ? '' : ' ' + t('(not trained yet)')}</option>`).join('');
-  $('#libTitle').textContent = spell >= 0 ? t('What should {name} do?', { name: gestureName(spell) }) : slot >= 0 ? t('Fill IR slot {n}', { n: slot + 1 }) : t('Remote library');
+    gestures().map((g, i) => (g.c ? `<option value="${i}" ${i === spell ? 'selected' : ''}>${esc(displayName(g.n))}</option>` : '')).join('');
+  $('#libTitle').textContent = slot >= 0 ? t('Fill IR slot {n}', { n: slot + 1 }) : t('Remote library');
   if (!libBrand.options.length) fillLibBrands(); else onLibAction();
   libDlg.showModal();
 }
@@ -503,7 +605,7 @@ $('#libSave').addEventListener('click', (e) => {
   }
   const g = +libSpell.value;
   if (g >= 0) send(`BIND ${g} ${s}`);
-  toast(g >= 0 ? t('{spell} now sends {what} ✓', { spell: gestureName(g), what: `${t(libBrand.value)} · ${t(a.label, a.vars)}` }) : t('Saved as {name} ✓', { name: fromWire(name) }));
+  toast(g >= 0 ? t('{spell} now sends {what} ✓', { spell: displayName(gestures()[g].n), what: `${t(libBrand.value)} · ${t(a.label, a.vars)}` }) : t('Saved as {name} ✓', { name: fromWire(name) }));
   libDlg.close();
 });
 
@@ -511,17 +613,18 @@ $('#libSave').addEventListener('click', (e) => {
 function renderSettings() {
   const i = state.info;
   const on = !!(state.link && i);
-  for (const id of ['thr', 'sleep', 'wake', 'haptics', 'calBtn', 'buzzBtn', 'sleepBtn', 'exportBtn', 'resetBtn', 'wandName', 'renameBtn'])
+  for (const id of ['thr', 'sleep', 'wake', 'haptics', 'calBtn', 'buzzBtn', 'sleepBtn', 'exportBtn', 'resetBtn', 'wandName', 'renameBtn', 'backupBtn', 'setupBtn', 'ownerName', 'ownerBtn'])
     $('#' + id).disabled = !on;
   if (!i) return;
   if (document.activeElement !== $('#wandName')) $('#wandName').value = (i.name || '').replace(/^Wand-/, '');
+  if (document.activeElement !== $('#ownerName')) $('#ownerName').value = state.profile?.owner || '';
   $('#thr').value = i.thr; $('#thrOut').textContent = (+i.thr).toFixed(2);
   $('#sleep').value = i.sleep; $('#sleepOut').textContent = `${i.sleep} s`;
   $('#wake').value = i.wake; $('#wakeOut').textContent = `${i.wake}`;
   $('#haptics').checked = !!i.haptics;
   $('#haptics').disabled = !on || !i.motor;
   $('#buzzBtn').disabled = !on || !i.motor;
-  $('#deviceInfo').textContent = JSON.stringify({ fw: i.fw, battery: `${i.bat}% (${i.volts} V)`, charging: !!i.chg,
+  $('#deviceInfo').textContent = JSON.stringify({ fw: i.fw, id: i.uid || '(firmware before 0.5.0)', battery: `${i.bat}% (${i.volts} V)`, charging: !!i.chg,
     axis: i.axis, vibration_motor: !!i.motor, ir_receiver: !!i.irrx, storage: i.store || 'flash' }, null, 2);
 }
 const live = (id, fmt) => $('#' + id).addEventListener('input', (e) => ($('#' + id + 'Out').textContent = fmt(e.target.value)));
@@ -532,6 +635,7 @@ $('#thr').addEventListener('change', (e) => send(`SET thr ${e.target.value}`));
 $('#sleep').addEventListener('change', (e) => send(`SET sleep ${e.target.value}`));
 $('#wake').addEventListener('change', (e) => send(`SET wake ${e.target.value}`));
 $('#haptics').addEventListener('change', (e) => send(`SET haptics ${e.target.checked ? 1 : 0}`));
+$('#ownerBtn').addEventListener('click', () => { state.profile.owner = $('#ownerName').value.trim(); storeProfile(); renderStatus(); toast(t('Saved ✓')); });
 
 $('#calBtn').addEventListener('click', () => send('CAL'));
 $('#renameBtn').addEventListener('click', () => {
@@ -544,24 +648,21 @@ $('#resetBtn').addEventListener('click', () => {
   if (prompt(t('This erases every spell and IR code. Type RESET to confirm.')) === 'RESET') send('RESET yes');
 });
 
-// Backup: ask for every stored code, then download them as JSON.
-$('#exportBtn').addEventListener('click', () => {
-  const used = (state.info?.c || []).map((c, i) => (c.k ? i : -1)).filter((i) => i >= 0);
+// Download the IR codes as JSON (also kept in the browser backups).
+$('#exportBtn').addEventListener('click', async () => {
+  const used = codes().map((c, i) => (c.k ? i : -1)).filter((i) => i >= 0);
   if (!used.length) return toast(t('No IR codes to back up'), true);
-  state.backup = { expected: used.length, codes: [] };
-  used.forEach((i) => send(`DUMPC ${i}`));
-});
-function onCodeDump(p) {
-  if (!state.backup) return;
-  const [slot, khz, name, list] = p;
-  state.backup.codes.push({ slot: +slot, khz: +khz, name: fromWire(name === '-' ? '' : name), d: list ? list.split(',').map(Number) : [] });
-  if (state.backup.codes.length >= state.backup.expected) {
-    const blob = new Blob([JSON.stringify({ wand: state.link?.name, codes: state.backup.codes }, null, 2)], { type: 'application/json' });
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'wand-ir-codes.json' });
-    a.click();
-    state.backup = null;
+  const out = [];
+  for (const i of used) {
+    send(`DUMPC ${i}`);
+    const l = await expect((x) => x.startsWith(`CODE ${i} `), 4000);
+    if (!l) continue;
+    const [, slot, khz, name, list] = l.split(' ');
+    out.push({ slot: +slot, khz: +khz, name: fromWire(name === '-' ? '' : name), d: list ? list.split(',').map(Number) : [] });
   }
-}
+  const blob = new Blob([JSON.stringify({ wand: state.link?.name, codes: out }, null, 2)], { type: 'application/json' });
+  Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'wand-ir-codes.json' }).click();
+});
 
 // ------------------------------------------------------------------ log + raw commands
 function logLine(text, cls) {
@@ -581,17 +682,18 @@ $('#cmdForm').addEventListener('submit', (e) => {
 });
 
 // ------------------------------------------------------------------ tabs, toast
-// The motion stream runs only while the Live or Training tab is shown in a visible page.
+// The motion stream runs only while the Home or Wizard tab (or the spell trainer) is shown.
 const shownTab = () => document.querySelector('.tabs button[aria-selected="true"]')?.dataset.tab;
-const streamTabShown = () => ['live', 'training'].includes(shownTab());
+const streamTabShown = () => ['live', 'training'].includes(shownTab()) || spells.busy();
 function updateStream() {
   if (!state.link) return;
   send(`STREAM ${streamTabShown() && document.visibilityState === 'visible' ? 1 : 0}`);
 }
+new MutationObserver(updateStream).observe($('#spellDlg'), { attributes: true, attributeFilter: ['open'] });
 
 function showTab(name) {
   document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x.dataset.tab === name));
-  document.querySelectorAll('.tab').forEach((t) => (t.hidden = t.id !== 'tab-' + name));
+  document.querySelectorAll('.tab').forEach((x) => (x.hidden = x.id !== 'tab-' + name));
   training.onShown(name === 'training' && document.visibilityState === 'visible');
   updateStream();
 }
@@ -599,14 +701,14 @@ document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('cli
 
 let toastTimer;
 function toast(text, err = false) {
-  const t = $('#toast');
+  const el = $('#toast');
   const host = document.querySelector('dialog[open]') || document.body;  // stay above open dialogs
-  if (t.parentElement !== host) host.append(t);
-  t.textContent = text;
-  t.className = 'toast' + (err ? ' err' : '');
-  t.hidden = false;
+  if (el.parentElement !== host) host.append(el);
+  el.textContent = text;
+  el.className = 'toast' + (err ? ' err' : '');
+  el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 3500);
+  toastTimer = setTimeout(() => (el.hidden = true), 3500);
 }
 
 // ------------------------------------------------------------------ plot
@@ -639,7 +741,6 @@ applyStatic();
 initPickers();
 onLangChange(() => {
   render();
-  renderSuggestions();
   fillLibDevices();
   if (libDlg.open) fillLibBrands();
   training.onLang();
@@ -647,4 +748,6 @@ onLangChange(() => {
   if (!state.link) setStatus(t('No wand connected'));
 });
 render();
-showConnect();
+setStatus(t('No wand connected'));
+document.body.classList.add('offline');
+knownList().then((k) => (k.length ? autoReconnect(k) : showConnect()));

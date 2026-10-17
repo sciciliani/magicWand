@@ -15,6 +15,7 @@ the XIAO nRF52840 Sense (`firmware/MagicWand_nRF52840`). It's kept for reference
 | Gesture engine (`firmware/common/gesture.*`) | Done | `make test`: hand simulator, 12 grips × 3 IMU mountings, ~99.9% recognized / 0.1% misfire; raw-axis baseline 26% upside down |
 | IR preset encoders (`app/ir-presets.js`) | Done | `make test`: Samsung/LG decode to published hex, Sony timing |
 | Web app (`app/`) | Done | Playwright in `?demo` mode (MockWand), desktop + 390 px, no console errors |
+| Setup / Spells / Devices / Knight / backups (branch `ui-setup`) | Draft, demo-tested | Playwright in `?demo`: setup with rename + reconnect, LG detect, spell trainer, knight pairing, factory reset → restore. Not tried on a real wand yet |
 | MG24 firmware | Written, **never compiled for ARM, never run** | `make check-fw` only (host syntax check against hand-written stubs in `test/stubs_mg24/`) |
 | nRF52840 firmware | Same status | `make check-fw` against `test/stubs_nrf52840/` |
 

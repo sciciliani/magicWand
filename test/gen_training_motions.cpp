@@ -38,10 +38,10 @@ static void emit(const char* name, const char* kind, int move, SimOpts o) {
 
 int main() {
   const Vec3 mounts[] = {{1, 0, 0}, {0, 1, 0}, {0, 0, -1}};
-  struct { const char* name; int move; } targets[] = {{"circle", CIRCLE}, {"hit", FLICK_UP}, {"zigzag", ZIGZAG}};
+  struct { const char* name; int move; } targets[] = {{"circle", CIRCLE}, {"hit", FLICK_UP}, {"zigzag", ZIGZAG},
+                                                        {"stroke", SLASH_DOWN}, {"tipup", LIFT_UP}};
   struct { const char* name; int move; } others[] = {{"swish-right", SWISH_RIGHT}, {"twist", TWIST},
-                                                       {"stab", STAB}, {"slash-down", SLASH_DOWN},
-                                                       {"swish-flick", SWISH_FLICK}};
+                                                       {"stab", STAB}, {"swish-flick", SWISH_FLICK}};
   printf("[");
   for (int k = 0; k < 40; k++) {
     Vec3 m = mounts[k % 3];

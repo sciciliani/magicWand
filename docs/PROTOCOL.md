@@ -17,9 +17,13 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `PING` | Liveness | `PONG` |
 | `STREAM 1\|0` | Live motion features at 25 Hz | `OK STREAM n`, then `F …` lines |
 | `PRACTICE 1\|0` | Training: moves are still reported (`SEG`, `MATCH`) but no spell fires: no buzz, no IR. Turns off on disconnect | `OK PRACTICE n` |
-| `REC <g> [name]` | Record one training sample into gesture slot g (0–7). The wand ticks twice and buzzes "go", then waits up to 5 s for a move | `REC g armed`, then `REC g ok <count> <threshold>` or `REC g timeout` |
+| `REC <g> [name]` | Record one training sample into gesture slot g (0–7). The wand ticks twice and buzzes "go", then waits up to 5 s for a move | `REC g armed`, then `REC g ok <count> <threshold> near <g2> <dist> <thr2>` or `REC g timeout`. `near`: the closest OTHER trained spell to this sample (−1 = none), its DTW distance and its threshold; dist < thr2 means the two spells may be confused |
 | `GNAME <g> <name>` | Rename gesture | `OK GNAME g` |
 | `GCLR <g>` | Forget gesture samples | `OK GCLR g` |
+| `GUNDO <g>` | Forget the newest sample of g (the app judged that attempt a wrong move) | `OK GUNDO g <count>` |
+| `GTHR <g> <0.1–2>` | Set one spell's acceptance distance (higher = recognised more easily). Recomputed by the next `REC` or `SET thr` | `OK GTHR g v` |
+| `DUMPG <g>` | Read a spell back as hex (name, count, threshold and its samples: the firmware's GestureSlot, 24 + 128 × count bytes) | `GDATA g <hex>` |
+| `GLOAD <g> <hex>` | Restore a spell from `DUMPG` (app backups) | `OK GLOAD g <count>` / `ERR GLOAD …` |
 | `LEARN <c> [name]` | Capture a button from a remote into IR slot c (0–11). Countdown first (a buzz tick per second, long buzz on go), then a 10 s window. The capture is decoded (see below) | `LEARN c count 3`, `count 2`, `count 1`, `LEARN c go`, `LEARN c waiting`, then `LEARN c ok <bits> <hex> <repeats> <kHz>` (e.g. `LEARN 0 ok 24 F2A0D5 3 56`) / `timeout` / `unsupported` |
 | `CODE <c> <khz> <name\|-> <d1,d2,…>` | Upload a raw code: µs durations, mark first. Decoded on arrival | `OK CODE c <durations>` + `IRCODE …`, or `ERR CODE can't decode` |
 | `HEX <c> <nec\|samsung\|coolix\|sony\|rca> <name> <hex> [repeats]` | Store a code from its hex value (as IrDump prints it) and a protocol's timings | `OK CODE c <durations>` + `IRCODE …` |
@@ -62,12 +66,13 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 ## INFO json
 
 ```json
-{"name":"Wand-A1B2","fw":"0.1.0","bat":76,"volts":3.92,"chg":0,"axis":[1,0,0],"thr":0.45,"sleep":30,"wake":3,
- "haptics":1,"motor":1,"irrx":1,"store":"nvm3",
+{"name":"Wand-A1B2","fw":"0.5.0-mg24","bat":76,"volts":3.92,"chg":0,"axis":[1,0,0],"thr":0.45,"sleep":30,"wake":3,
+ "haptics":1,"motor":1,"irrx":1,"store":"nvm3","uid":"9A3F00112233A1B2",
  "g":[{"n":"Aperio","c":3,"t":0.52,"b":0}, … 8 entries],
  "c":[{"n":"Samsung_Power","k":38,"l":67}, … 12 entries]}
 ```
 
+`uid` the chip's unique ID (16 hex digits; the factory name `Wand-XXXX` is its last 4): the app keys profiles and backups by it, so they survive renames and factory resets.
 `g[].c` sample count, `g[].t` acceptance threshold, `g[].b` bound code (−1 none);
 `c[].k` carrier kHz (0 = empty slot), `c[].l` number of durations.
 

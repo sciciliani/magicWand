@@ -82,10 +82,11 @@ static float bump(float s, float a, float b) {  // smooth 0..1..0 on [a,b]
   return sinf(3.14159265f * x) * sinf(3.14159265f * x);
 }
 
-enum MoveId { SWISH_RIGHT, FLICK_UP, TWIST, CIRCLE, STAB, SWISH_FLICK, ZIGZAG, SLASH_DOWN, NUM_MOVES };
+enum MoveId { SWISH_RIGHT, FLICK_UP, TWIST, CIRCLE, STAB, SWISH_FLICK, ZIGZAG, SLASH_DOWN, NUM_MOVES,
+              LIFT_UP = NUM_MOVES };  // LIFT_UP: only for the Training tab tests (not in the gesture set)
 static const char* kMoveNames[NUM_MOVES] = {"swish-right", "flick-up", "twist(aperio)", "circle(orbis)",
                                             "stab(stupefy)", "swish-and-flick", "zigzag(Z)", "slash-down"};
-static const float kMoveDur[NUM_MOVES] = {0.45f, 0.30f, 0.45f, 0.9f, 0.35f, 0.8f, 0.9f, 0.4f};
+static const float kMoveDur[NUM_MOVES + 1] = {0.45f, 0.30f, 0.45f, 0.9f, 0.35f, 0.8f, 0.9f, 0.4f, 0.4f};
 
 static Motion profile(int move, float s) {
   const float P = 420;  // deg/s peak
@@ -103,6 +104,7 @@ static Motion profile(int move, float s) {
       return {P * (bump(s, 0, 0.33f) - 0.8f * bump(s, 0.33f, 0.66f) + bump(s, 0.66f, 1)),
               -P * 0.8f * bump(s, 0.33f, 0.66f), 0, 0};
     case SLASH_DOWN: return {-P * 0.3f * bump(s, 0, 1), -P * bump(s, 0, 1), 0, 0};
+    case LIFT_UP: return {P * 0.2f * bump(s, 0, 1), P * bump(s, 0, 1), 0, 0};
   }
   return {0, 0, 0, 0};
 }

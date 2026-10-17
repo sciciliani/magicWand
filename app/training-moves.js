@@ -5,10 +5,12 @@
 // (STREAM 1). right/up = how fast the tip moves sideways/up (x100, 100 = 150
 // deg/s), the same whichever way the wand is held. energy ≈ deg/s.
 //
-// Three fixed moves:
-//   circle  a full loop with the tip, about 1 s
-//   hit     a quick snap up and back down
+// The moves:
 //   zigzag  side to side fast: right, left, right
+//   stroke  one firm stroke of the tip from up high to down low
+//   tipup   the opposite: lift the tip from low to high
+//   circle  a full loop with the tip, about 1 s
+//   hit     a quick snap up and back down (older training set)
 
 export const MOVES = {
   circle: {
@@ -26,6 +28,16 @@ export const MOVES = {
     how: 'Side to side, fast: right, left, right. Keep the tip level.',
     path: 'M12 32 L88 42 L12 56 L88 68',
   },
+  stroke: {
+    name: 'Stroke',
+    how: 'Start with the tip up high, then ONE firm stroke straight down, and stop.',
+    path: 'M50 12 L50 88',
+  },
+  tipup: {
+    name: 'Tip up',
+    how: 'Start with the tip low, then lift it straight up in ONE quick move, and stop.',
+    path: 'M50 88 L50 12',
+  },
 };
 
 // Tuning (all times in seconds, speeds in deg/s of the tip). Every attempt is
@@ -41,6 +53,9 @@ export const TUNE = {
   circle: { minTurn: 270, almostTurn: 150, minRound: 0.3, slow: 1.5, minPeak: 150, fast: 0.45 },
   hit: { vsSide: 1.8, slow: 0.6, minPeak: 200, fast: 0.08 },
   zigzag: { vsUp: 1.5, minRev: 2, slow: 1.5, minPeak: 150, fast: 0.25 },
+  // One-way strokes: forgiving on purpose (the setup must almost always say yes).
+  stroke: { vsSide: 0.7, oneWay: 2.5, slow: 0.8, minPeak: 190, fast: 0.06 },
+  tipup: { vsSide: 0.7, oneWay: 2.5, slow: 0.8, minPeak: 190, fast: 0.06 },
 };
 
 const DT = 1 / 25;
@@ -86,12 +101,13 @@ function despike(seg) {
 // Numbers that describe one move.
 export function measure(raw) {
   const seg = despike(raw);
-  let path = 0, side = 0, up = 0, twist = 0, thrust = 0, peak = 0, peakUp = 0, turn = 0;
+  let path = 0, side = 0, up = 0, upPos = 0, upNeg = 0, twist = 0, thrust = 0, peak = 0, peakUp = 0, turn = 0;
   let x = 0, y = 0, minX = 0, maxX = 0, minY = 0, maxY = 0, lastA = null, rSign = 0, uSign = 0, rRev = 0, uRev = 0;
   const speeds = seg.map(([r, u]) => Math.hypot(r * K, u * K));
   for (const [r, u, t, th] of seg) {
     const vr = r * K, vu = u * K, s = Math.hypot(vr, vu);
     path += s * DT; side += Math.abs(vr) * DT; up += Math.abs(vu) * DT;
+    if (vu > 0) upPos += vu * DT; else upNeg -= vu * DT;
     twist += Math.abs(t * K) * DT; thrust += Math.abs(th) / 100 * DT;
     peak = Math.max(peak, s); peakUp = Math.max(peakUp, Math.abs(vu));
     x += vr * DT; y += vu * DT;
@@ -112,7 +128,7 @@ export function measure(raw) {
   const core = speeds.map((v, i) => (v >= peak * 0.35 ? i : -1)).filter((i) => i >= 0);
   const active = core.length ? (core[core.length - 1] - core[0] + 1) * DT : 0;
   return {
-    dur: seg.length * DT, active, path, side, up, twist, thrust, peak, peakUp,
+    dur: seg.length * DT, active, path, side, up, upPos, upNeg, twist, thrust, peak, peakUp,
     turn: Math.abs(turn) * 180 / Math.PI, round: Math.min(w, h) / Math.max(w, h, 1e-6),
     rRev, uRev, tooLong: !!raw.tooLong,
   };
@@ -155,6 +171,20 @@ export function judge(target, m) {
     if (m.rRev < T.minRev) return no('shape', 'More zigs: right, left, right.');
     if (m.active < T.fast) return no('slower', 'A bit slower, three clear strokes.');
     return { ok: true, kind: 'yes', say: 'Yes! A sharp zigzag.' };
+  }
+  if (target === 'stroke' || target === 'tipup') {
+    const down = target === 'stroke';
+    const want = down ? m.upNeg : m.upPos, other = down ? m.upPos : m.upNeg;
+    if (m.active > T.slow || m.peak < T.minPeak) return no('faster', down ? 'Faster! One firm stroke down.' : 'Faster! Lift the tip in one quick move.');
+    if (wrongKind) return no('shape', wrongKind);
+    if (m.side * T.vsSide > m.up) return no('shape', down ? 'Straight down, not sideways.' : 'Straight up, not sideways.');
+    if (want < other * T.oneWay) {
+      if (other > want) return no('shape', down ? 'That went up. Stroke DOWN: from high to low.' : 'That went down. Lift the tip UP: from low to high.');
+      return no('shape', down ? 'Only down, one stroke, then stop.' : 'Only up, one lift, then stop.');
+    }
+    if (m.turn >= TUNE.circle.minTurn) return no('shape', 'That was a loop. One straight stroke.');
+    if (m.active < T.fast) return no('slower', 'A little slower, one clear stroke.');
+    return { ok: true, kind: 'yes', say: down ? 'Yes! A clean stroke.' : 'Yes! A fine lift.' };
   }
   return no('shape', 'Hmm.');
 }

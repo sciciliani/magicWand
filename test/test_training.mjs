@@ -21,7 +21,7 @@ function catchMove(rows) {
 
 // A real hard snap doesn't stop dead: the wand wobbles for half a second.
 // Same hits with that wobble appended must still be accepted.
-for (const d of data.filter((x) => x.move === 'hit' && x.kind === 'ok')) {
+for (const d of data.filter((x) => ['hit', 'stroke', 'tipup'].includes(x.move) && x.kind === 'ok')) {
   const rows = d.f.map((r) => r.slice());
   let last = rows.length - 1;
   while (last > 0 && rows[last][4] < 40) last--;
@@ -32,14 +32,19 @@ for (const d of data.filter((x) => x.move === 'hit' && x.kind === 'ok')) {
     wob.push([Math.round(a * 0.3), Math.round(a), 0, 0, Math.round(Math.abs(a) * 1.5)]);
   }
   rows.splice(last + 1, 0, ...wob);
-  data.push({ move: 'hit', kind: 'wobble', f: rows });
+  data.push({ move: d.move, kind: 'wobble', f: rows });
 }
 
 const stats = {};
 const bump = (k, ok) => { stats[k] ??= [0, 0]; stats[k][0] += ok ? 1 : 0; stats[k][1]++; };
 for (const d of data) {
   const seg = catchMove(d.f);
-  for (const target of ['circle', 'hit', 'zigzag']) {
+  for (const target of ['circle', 'hit', 'zigzag', 'stroke', 'tipup']) {
+    // Hit (up and back down) belongs to the old set and is never trained with
+    // Stroke / Tip up: a forgiving Tip up accepts a hit, a hit judge accepts a
+    // stroke that wobbles back up. Those pairs are not checked against each other.
+    const oldSet = (x) => x === 'hit', newOneWay = (x) => x === 'stroke' || x === 'tipup';
+    if ((oldSet(target) && newOneWay(d.move)) || (newOneWay(target) && oldSet(d.move))) continue;
     if (d.kind === 'ok' && d.move === target) {
       const v = seg && judge(target, measure(seg));
       bump(`${target}: done right -> yes`, v?.ok);

@@ -174,7 +174,7 @@ export const LIBRARY = {
     Sony: { short: 'Sony', note: 'Bravia and older Sony TVs', actions: SONY },
     Toshiba: { short: 'Tosh', note: 'Older Toshiba TVs (NEC)', actions: TOSHIBA },
     Panasonic: { short: 'Pana', note: 'Viera TVs', actions: PANASONIC },
-    RCA: { short: 'RCA', note: 'RCA-format remotes (codes like F2A0D5, 56 kHz)', actions: RCA },
+    RCA: { short: 'RCA', note: 'RCA-format remotes (codes like F2A0D5)', actions: RCA },
     'Other brand (learn)': { short: 'TV', note: 'Copy each button from your remote', actions: TV_LEARN },
   },
   'Air conditioner': {
@@ -218,3 +218,70 @@ export const LIBRARY = {
     },
   },
 };
+
+// ------------------------------------------------------------------ identify a learned code
+// The wand reports a learned code as "<bits> <hex>" (bits in the order they are
+// sent, hex padded at the end, exactly like the firmware's ir::hex()). These
+// helpers read a raw code (first frame) the same way, so a code captured from
+// your remote can be looked up in the library.
+export function codeKey(d) {
+  if (!d || d.length < 9) return null;
+  let s = 0, e = d.length;
+  for (let i = 1; i < d.length; i += 2) if (d[i] > 5000) { e = i; break; }  // first frame only
+  if (d[0] > 2000) s = 2;  // header
+  const marks = [], spaces = [];
+  for (let i = s; i < e; i++) (i % 2 === 0 ? marks : spaces).push(d[i]);
+  if (!marks.length) return null;
+  const span = (a) => [Math.min(...a), Math.max(...a)];
+  const [sMin, sMax] = spaces.length ? span(spaces) : [0, 0];
+  const [mMin, mMax] = span(marks);
+  let bits = '';
+  if (sMax > sMin * 1.6) {          // pulse-distance: the space after each mark (last mark = stop bit)
+    const thr = (sMin + sMax) / 2;
+    for (let i = s; i + 1 < e; i += 2) bits += d[i + 1] > thr ? '1' : '0';
+  } else if (mMax > mMin * 1.6) {   // pulse-width (Sony): the marks
+    const thr = (mMin + mMax) / 2;
+    for (let i = s; i < e; i += 2) bits += d[i] > thr ? '1' : '0';
+  } else return null;
+  return learnedKey(bits.length, bitsToHex(bits));
+}
+const bitsToHex = (bits) => {
+  const padded = bits.padEnd(Math.ceil(bits.length / 4) * 4, '0');
+  let h = '';
+  for (let i = 0; i < padded.length; i += 4) h += parseInt(padded.slice(i, i + 4), 2).toString(16).toUpperCase();
+  return h;
+};
+/** Key of a code reported by the wand: "LEARN c ok <bits> <hex> …". */
+export const learnedKey = (bits, hex) => `${+bits}:${String(hex).toUpperCase().replace(/^0X/, '')}`;
+
+/** Library entries whose code is the same as `key`: [{ device, brand, action }]. */
+export function identify(key, device = null) {
+  const hits = [];
+  for (const [dev, brands] of Object.entries(LIBRARY)) {
+    if (device && dev !== device) continue;
+    for (const [brand, b] of Object.entries(brands))
+      b.actions.forEach((a, k) => { if (a.make && codeKey(a.make().d) === key) hits.push({ device: dev, brand, action: k }); });
+  }
+  return hits;
+}
+
+// ------------------------------------------------------------------ knight battle codes
+// A pair of NEC codes with a random 16-bit address: "hit" and "heal". The
+// address avoids the plain-NEC form (low byte + its inverse, used by real TVs)
+// and the addresses already used by the library and the wand's own props.
+export function battleCodes(taken = new Set(), rnd = Math.random) {
+  const avoid = new Set([0x57, 0x04, 0x40, 0x07, 0x00]);
+  for (let tries = 0; tries < 1000; tries++) {
+    const addr = 0x100 + Math.floor(rnd() * 0xfeff);
+    const lo = addr & 0xff, hi = addr >> 8;
+    if ((lo ^ hi) === 0xff || avoid.has(lo) || avoid.has(hi)) continue;
+    const hit = Math.floor(rnd() * 256);
+    let heal = Math.floor(rnd() * 256);
+    if (heal === hit) heal = (heal + 0x55) & 0xff;
+    const a = nec(addr, hit), b = nec(addr, heal);
+    const ka = codeKey(a.d), kb = codeKey(b.d);
+    if (taken.has(ka) || taken.has(kb)) continue;
+    return { addr, hit: { cmd: hit, ...a, key: ka }, heal: { cmd: heal, ...b, key: kb } };
+  }
+  throw new Error('no free battle code');
+}

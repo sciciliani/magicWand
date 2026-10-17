@@ -169,7 +169,7 @@ body.offline main, body.offline .tabs, body.offline .header-actions { opacity: 0
 
 dialog::backdrop { background: #07050cc0; backdrop-filter: blur(3px); }
 dialog { box-shadow: 0 20px 60px #000a, 0 0 0 1px #e3bd6222; max-width: min(440px, calc(100% - 32px)); }
-dialog input, #wandName { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+dialog input, #wandName, #ownerName { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 #libDlg .row { margin: 4px 0; }
 #libState { min-height: 1.3em; }
 
@@ -284,3 +284,115 @@ dialog.summon {
   .wizard-figure img { max-height: 250px; width: auto; max-width: 100%; }
   .wizard-stage { background-position: center, center 30%, 0 0; }
 }
+
+/* ---------------------------------------------------------------- spell pictures */
+.spell-icon { position: relative; display: inline-flex; width: var(--s, 64px); height: var(--s, 64px); flex: none; }
+.spell-icon svg, .spell-icon img { width: 100%; height: 100%; }
+.spell-icon .disc { fill: #e3bd620d; stroke: #e3bd6233; stroke-width: 1.2; }
+.spell-icon .trail { fill: none; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+.spell-icon .head { fill: #e3bd62; }
+.spell-icon .start { fill: #fff3c4; opacity: .85; }
+.spell-icon .ring { fill: none; stroke: #e3bd6299; stroke-width: 3; }
+.spell-icon .initial { fill: #fff3c4; font: 700 22px var(--display); }
+.spell-icon .spark { fill: #fff; filter: drop-shadow(0 0 5px #e3bd62); opacity: 0; }
+.spell-icon.playing .spark { opacity: 1; }
+.unsure-badge {
+  position: absolute; right: -4px; top: -4px; width: 45%; height: 45%; min-width: 16px; min-height: 16px;
+  border-radius: 50%; background: var(--violet); color: #fff; font: 700 12px/1 var(--display);
+  display: grid; place-items: center; box-shadow: 0 0 0 2px var(--panel);
+}
+.demo-big { align-self: center; }
+
+/* ---------------------------------------------------------------- reconnect bar */
+.reconnect-bar {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 9px 16px;
+  background: linear-gradient(90deg, #2a1f45, var(--panel)); border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.reconnect-bar .grow { flex: 1; }
+.reconnect-bar select { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.small-sigil { color: var(--gold); display: inline-block; animation: spin 2.4s linear infinite; }
+
+/* ---------------------------------------------------------------- live */
+.cast-row { display: flex; gap: 14px; align-items: center; }
+.cast-row b { display: block; font: 600 20px var(--display); color: var(--gold); }
+.history li { display: flex; gap: 8px; align-items: center; margin: 3px 0; }
+.history { list-style: none; padding-left: 0; }
+.history li .spell-icon { --s: 30px; }
+
+/* ---------------------------------------------------------------- spells tab */
+.my-spells { display: grid; gap: 10px; }
+.spell-card { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; background: #17131fcc;
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.spell-body b { font-family: var(--display); letter-spacing: .5px; }
+.spell-body .dots { margin: 4px 0; }
+.spell-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.more-spells { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.spell-tile { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; border: 1px dashed var(--line); border-radius: 12px; padding: 10px; }
+.spell-tile p { margin: 2px 0 6px; }
+.spell-tile button { grid-column: 2; justify-self: start; }
+#customName { flex: 1; min-width: 160px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.dots.big i { width: 16px; height: 16px; }
+@media (max-width: 600px) { .spell-card { grid-template-columns: auto 1fr; } .spell-actions { grid-column: 1 / -1; justify-content: flex-start; } }
+
+dialog.spell-dlg, dialog.dev-dlg { max-width: min(560px, calc(100% - 32px)); width: 560px; }
+.sd-head { display: flex; gap: 14px; align-items: center; }
+.sd-head h2 { margin-bottom: 4px; font-size: 18px; }
+.sd-head p { margin: 0 0 6px; }
+.sd-msg { min-height: 1.4em; font-family: var(--serif); font-size: 17px; }
+.warn-card { border: 1px solid var(--gold); background: #e3bd6214; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.warn-card .row { margin-top: 8px; }
+.sens { display: grid; gap: 4px; margin: 10px 0; }
+.sens input { width: 100%; accent-color: var(--accent); }
+.test-msg { font-size: 16px; color: var(--gold); }
+
+/* ---------------------------------------------------------------- setup (wizard tab) */
+.names { width: 100%; max-width: 420px; }
+.names input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.names .row input { flex: 1; width: auto; }
+.rule-card { border: 1px solid var(--accent); background: #e3bd6214; border-radius: 12px; padding: 10px 14px; font-family: var(--serif); font-size: 17px; }
+.purpose-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; width: 100%; }
+.purpose { display: grid; gap: 4px; justify-items: start; text-align: left; padding: 14px; border-radius: 12px; background: var(--panel); }
+.purpose .picon { font-size: 28px; }
+.purpose b { font-family: var(--display); letter-spacing: .5px; color: var(--gold); }
+.purpose.off { opacity: .45; }
+
+/* ---------------------------------------------------------------- devices */
+.device-head { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; margin-bottom: 8px; }
+.dicon { font-size: 28px; }
+.dev-name { font: 600 16px var(--display); color: var(--gold); background: none; border: 1px solid transparent; border-radius: 6px; padding: 2px 4px; width: 100%; }
+.dev-name:hover, .dev-name:focus { border-color: var(--line); background: var(--bg); }
+.keys { display: grid; gap: 6px; }
+.key-row { display: grid; grid-template-columns: auto 1fr auto minmax(120px, 190px) auto auto; gap: 8px; align-items: center;
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.key-row select { padding: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); min-width: 0; }
+.key-row .key-state { grid-column: 1 / -1; min-height: 0; }
+.key-row .key-state:empty { display: none; }
+.icon-gap { width: 28px; }
+.icon-gap.big { width: 44px; }
+.add-key { margin-top: 10px; }
+.add-key select { padding: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+#addDeviceBtn { margin-bottom: 14px; }
+.choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.choice { display: grid; gap: 6px; justify-items: center; padding: 16px 10px; border-radius: 12px; font-family: var(--display); }
+.brand-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.small-choice { justify-items: start; text-align: left; padding: 9px 10px; font-family: inherit; }
+.small-choice .small { font-size: 11px; }
+.dev-dlg .key-row { grid-template-columns: auto 1fr auto; }
+.wiz-msg { min-height: 1.4em; color: var(--gold); }
+@media (max-width: 600px) { .key-row { grid-template-columns: auto 1fr auto; } .key-row select { grid-column: 1 / -1; } }
+
+/* ---------------------------------------------------------------- knight */
+.battle-row { display: grid; grid-template-columns: auto 1fr minmax(120px, 190px) auto; gap: 10px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); margin-bottom: 8px; }
+.battle-row select { padding: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); min-width: 0; }
+.knights { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 6px; }
+.knights li { display: flex; gap: 8px; align-items: center; }
+#knightArea input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+#knightArea menu { display: flex; gap: 8px; padding: 0; }
+@media (max-width: 600px) { .battle-row { grid-template-columns: auto 1fr; } .battle-row select { grid-column: 1 / -1; } }
+
+/* ---------------------------------------------------------------- backups */
+.backups { list-style: none; padding: 0; margin: 8px 0 10px; display: grid; gap: 6px; }
+.backups li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.backups li span .small { display: block; }
+.reconnect-bar[hidden] { display: none; }

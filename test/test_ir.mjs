@@ -69,3 +69,29 @@ for (const [dev, brands] of Object.entries(LIBRARY))
   }
 console.log(`ok  remote library: ${nLib} codes, names fit`);
 console.log('\nPASS');
+
+// Learned-code lookup: the key of a library code equals what the wand reports.
+const { codeKey, learnedKey, identify, battleCodes } = await import('../app/ir-presets.js');
+assert.equal(codeKey(nec(0x04, 0x08).d), learnedKey(32, '20DF10EF'));
+assert.equal(codeKey(samsung32(0x07, 0x02).d), learnedKey(32, 'E0E040BF'));
+assert.equal(codeKey(sony(21, 1).d), learnedKey(12, 'A90'));   // 101010010000
+assert.equal(codeKey(fromHex('rca', 'F2A0D5').d), learnedKey(24, 'F2A0D5'));
+const lgPower = identify(learnedKey(32, '20DF10EF'), 'TV');
+assert.ok(lgPower.some((h) => h.brand === 'LG' && LIBRARY.TV.LG.actions[h.action].short === 'Pwr'), 'LG power found');
+assert.ok(identify(learnedKey(24, 'F2F0D0'), 'TV').some((h) => h.brand === 'RCA'), 'RCA vol+ found');
+assert.equal(identify(learnedKey(32, '12345678'), 'TV').length, 0);
+console.log('ok  learned codes are found in the library (LG power, RCA vol+)');
+
+// Battle codes: two different NEC codes, 16-bit address, never a library code.
+let seed = 1;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const libKeys = new Set();
+for (const brands of Object.values(LIBRARY)) for (const b of Object.values(brands))
+  for (const a of b.actions) if (a.make) libKeys.add(codeKey(a.make().d));
+for (let i = 0; i < 200; i++) {
+  const bc = battleCodes(libKeys, rnd);
+  assert.notEqual(bc.hit.key, bc.heal.key);
+  assert.ok(bc.addr > 0xff && ((bc.addr & 0xff) ^ (bc.addr >> 8)) !== 0xff);
+  assert.ok(!libKeys.has(bc.hit.key) && !libKeys.has(bc.heal.key));
+}
+console.log('ok  battle codes: 200 random pairs, all distinct from the library');
