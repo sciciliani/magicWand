@@ -7,9 +7,9 @@
 //
 // Every knight paired with this wand learns the same two codes, so a spell
 // hits whichever knight you point at. More knights = pair each one.
-import { battleCodes, codeKey, LIBRARY } from './ir-presets.js?v=13';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=2';
-import { t } from './i18n.js?v=4';
+import { battleCodes, codeKey, LIBRARY } from './ir-presets.js?v=14';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=3';
+import { t } from './i18n.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -54,7 +54,7 @@ export function initKnight(app) {
     p.knight = { addr: bc.addr, hit: { cmd: bc.hit.cmd, khz: bc.hit.khz, d: bc.hit.d }, heal: { cmd: bc.heal.cmd, khz: bc.heal.khz, d: bc.heal.d }, knights: [], autoBind: true };
     app.saveProfile();
     ensureOnWand();
-    app.send('HELLO');
+    app.refresh();
     app.backup('knight');
     render();
   }
@@ -127,7 +127,7 @@ export function initKnight(app) {
     }
     const act = b.dataset.act;
     if (act === 'create') create();
-    else if (act === 'restore') { ensureOnWand(); app.send('HELLO'); }
+    else if (act === 'restore') { ensureOnWand(); app.refresh(); }
     else if (act === 'pair') { pairing = { step: 'ready' }; render(); }
     else if (act === 'pair-cancel') { pairing = null; render(); }
     else if (act === 'pair-send') {
@@ -158,6 +158,9 @@ export function initKnight(app) {
   return {
     render,
     start() { if (!k()) create(); else render(); },
+    /** Hit / Heal codes on the wand: { hit: slot, heal: slot } (-1 = not there), or null without battle codes. */
+    slots: () => (k() ? { hit: slotOf('hit'), heal: slotOf('heal') } : null),
+    assign: (which, g) => bind(which, g),
     onInfo() {
       // First time: Stroke strikes, Tip up heals (if the wand knows them and they are free).
       const kn = k();

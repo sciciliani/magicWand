@@ -180,7 +180,7 @@ Seeed's `xiao_mg24_erase.sh` (see the Seeed getting-started wiki).
 | Off | Asleep |
 
 - **Sleep:** after **30 s** without motion (with the app connected: after **3 minutes** without motion or commands; **Sleep now** right away; a page left in the background lets the wand go after a minute) the wand goes into
-  deep sleep. Every 1.2 s it checks for a fraction of a second whether it has been moved;
+  deep sleep. Every second it checks for a fraction of a second whether it has been moved;
   picking it up wakes it (one buzz). Change it with `SET sleep <seconds>` or in the app.
 - **Button (optional, D9):** tap = restart (also wakes it up). Hold **5 s** = factory reset.
 

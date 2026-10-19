@@ -6,9 +6,9 @@
 // your own remote (raw timings). The wand only stores the buttons that a spell
 // casts: mapping a spell uploads that one code to a free IR slot and binds it.
 // Test sends a code once without storing it (TRY).
-import { LIBRARY, identify } from './ir-presets.js?v=13';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=2';
-import { t } from './i18n.js?v=4';
+import { LIBRARY, identify } from './ir-presets.js?v=14';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=3';
+import { t } from './i18n.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -97,7 +97,7 @@ export function initDevices(app) {
       app.toast(t('{spell} now casts {what} ✓', { spell: displayName(gestures()[g].n), what: `${d.name} · ${keyLabel(key)}` }));
     }
     app.saveProfile();
-    app.send('HELLO');
+    app.refresh();
     app.backup('device');
   }
 
@@ -309,5 +309,16 @@ export function initDevices(app) {
     }
   });
 
-  return { render, openWizard, busy: () => dlg.open };
+  return {
+    render, openWizard, busy: () => dlg.open,
+    /** Buttons a spell can cast: [{ dev, key, name, label, known }]. */
+    choices: () => devices().flatMap((d) => d.keys.map((key) => ({ dev: d.id, key: key.id, name: d.name, label: keyLabel(key), known: !!codeOf(d, key) }))),
+    /** The device button a wand IR slot belongs to, or null. */
+    keyOfSlot: (slot) => { for (const d of devices()) for (const key of d.keys) if (slot >= 0 && key.slot === slot) return { dev: d.id, key: key.id }; return null; },
+    /** Spell g casts this button (g = -1: the button is cast by nothing). */
+    assign: (g, devId, keyId) => {
+      const d = devices().find((x) => x.id === devId), key = d?.keys.find((k) => k.id === keyId);
+      if (d && key) return mapSpell(d, key, g);
+    },
+  };
 }

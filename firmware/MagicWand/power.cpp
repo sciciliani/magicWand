@@ -179,7 +179,7 @@ void earlyBoot() {
   }
   // Moved. Confirm with a second check WAKE_CONFIRM_MS later: a bump on the
   // desk is over by then, a hand picking the wand up is not.
-  if (LowPower.deepSleepMemoryRead(kPendAddr) == 0) {
+  if (WAKE_CONFIRM_MS > 0 && LowPower.deepSleepMemoryRead(kPendAddr) == 0) {
     LowPower.deepSleepMemoryWrite(kPendAddr, 1);
     imu::powerOff();
     sleepFor(WAKE_CONFIRM_MS);

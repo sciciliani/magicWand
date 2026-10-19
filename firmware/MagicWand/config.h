@@ -74,7 +74,7 @@
 #define STILL_ENERGY 25.0f
 
 // How the wand notices it was picked up:
-//   WAKE_POLL    (default, needs no extra wiring): sleep 1.2 s, wake for ~25 ms,
+//   WAKE_POLL    (default, needs no extra wiring): sleep 1 s, wake for ~25 ms,
 //                check whether the wand's tilt changed, go back to sleep if not.
 //                Average ~40-120 uA -> weeks of standby on a small LiPo.
 //   WAKE_IMU_INT (~2-5 uA): IMU wake-up interrupt on PIN_IMU_INT. Needs the
@@ -83,14 +83,14 @@
 #define WAKE_POLL 0
 #define WAKE_IMU_INT 1
 #define WAKE_MODE WAKE_POLL
-#define WAKE_POLL_MS 1200
+#define WAKE_POLL_MS 1000
 #define WAKE_TILT_DEG 12.0f      // change of pointing angle that counts as "picked up" at wake sensitivity 3 (scales with SET wake); rolling is ignored
 #define WAKE_SHAKE_G 0.12f       // or this much acceleration while checking
 // A movement must still be there on a second check this much later (a desk
 // bump is over by then; a hand picking the wand up is not). Adds ~0.3 s to waking.
-#define WAKE_CONFIRM_MS 300
+#define WAKE_CONFIRM_MS 0       // 0 = off: wake on the first check that sees a move (300 = second check, ignores desk bumps)
 // Low battery: below LOW_BAT_SLEEP_V when going to sleep, the wand stops its
-// 1.2 s movement checks and only looks at the battery every LOW_BAT_POLL_MS
+// 1 s movement checks and only looks at the battery every LOW_BAT_POLL_MS
 // (the button still wakes it). Normal again above LOW_BAT_RESUME_V (charged).
 #define LOW_BAT_SLEEP_V 3.30f
 #define LOW_BAT_RESUME_V 3.60f

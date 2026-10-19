@@ -1,9 +1,9 @@
 // spells.js — the Spells tab: the spells on the wand, the ones it can still
 // learn, your own spells, and the trainer (1, 2, 3… GO, three samples,
 // sensitivity, a warning when a new spell looks like an existing one).
-import { SPELLS, spellIcon, playIcon, spellOfName, displayName, onArt } from './spell-book.js?v=2';
-import { Recorder } from './recorder.js?v=3';
-import { t } from './i18n.js?v=4';
+import { SPELLS, spellIcon, playIcon, spellOfName, displayName, onArt } from './spell-book.js?v=3';
+import { Recorder } from './recorder.js?v=4';
+import { t } from './i18n.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -30,15 +30,21 @@ export function initSpells(app) {
     const known = new Set(mine.map(({ g }) => spellOfName(g.n)?.id).filter(Boolean));
     $('#mySpells').innerHTML = mine.length ? mine.map(({ g, i }) => {
       const sp = spellOfName(g.n);
-      const does = g.b >= 0 ? t('sends “{code}”', { code: esc(app.codeLabel(g.b)) }) : t('no action yet');
+      const does = g.b >= 0 ? `<span class="muted small">${t('sends “{code}”', { code: esc(app.codeLabel(g.b)) })}</span>`
+        : `<button class="small linkish assign-link" data-act="assign" ${on ? '' : 'disabled'}>＋ ${t('Assign action')}</button>`;
       return `<div class="spell-card" data-g="${i}">
         ${spellIcon(sp, { size: 72, initial: g.n })}
         <div class="spell-body"><b>${esc(displayName(g.n))}</b>
           <div class="dots" title="${t('{n} of 4 samples', { n: g.c })}">${[0, 1, 2, 3].map((k) => `<i class="${k < g.c ? 'on' : ''}"></i>`).join('')}</div>
-          <div class="muted small">${does}</div></div>
+          <div>${does}</div></div>
         <div class="spell-actions">
-          <button class="small primary" data-act="train" ${on ? '' : 'disabled'}>${t('Train')}</button>
-          <button class="small" data-act="forget" ${on ? '' : 'disabled'}>${t('Forget')}</button>
+          <button class="small menu-btn" data-act="menu" aria-label="${t('More')}" title="${t('More')}" ${on ? '' : 'disabled'}>⋯</button>
+          ${menuOpen === i ? `<div class="card-menu" role="menu">
+            <button role="menuitem" data-act="assign">🎯 ${t('Assign action')}</button>
+            <button role="menuitem" data-act="tune">🎚️ ${t('Sensitivity and test')}</button>
+            <button role="menuitem" data-act="retrain">🔁 ${t('Re-train')}</button>
+            ${sp ? '' : `<button role="menuitem" data-act="rename">✏️ ${t('Rename')}</button>`}
+            <button role="menuitem" class="danger" data-act="forget">🗑️ ${t('Forget')}</button></div>` : ''}
         </div></div>`;
     }).join('') : `<p class="muted">${t('Your wand knows no spells yet. Learn one below.')}</p>`;
 
@@ -53,17 +59,79 @@ export function initSpells(app) {
     $('#customBtn').disabled = !on || !free;
   }
 
+  // One "⋯" menu per spell card, so the cards stay simple.
+  let menuOpen = -1;
+  document.addEventListener('click', (e) => {
+    if (menuOpen >= 0 && !e.target.closest('.spell-actions')) { menuOpen = -1; render(); }
+  });
   $('#mySpells').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     const card = e.target.closest('.spell-card');
     if (!b || !card) return;
     const g = +card.dataset.g;
-    const name = displayName(gestures()[g]?.n);
-    if (b.dataset.act === 'train') open({ slot: g });
-    else if (b.dataset.act === 'forget' && confirm(t('Forget {name}? The wand will not recognise it any more.', { name }))) {
+    const wire = gestures()[g]?.n;
+    const name = displayName(wire);
+    const act = b.dataset.act;
+    if (act === 'menu') { menuOpen = menuOpen === g ? -1 : g; return render(); }
+    menuOpen = -1;
+    render();
+    if (act === 'assign') openAssign(g);
+    else if (act === 'tune') open({ slot: g });
+    else if (act === 'retrain') {
+      if (confirm(t('Re-train {name}? Its samples are replaced by three new ones.', { name }))) open({ slot: g, retrain: true });
+    } else if (act === 'rename') {
+      const n = (prompt(t('New name for {name}:', { name }), name) || '').trim().replace(/[^A-Za-z0-9-]+/g, '_').slice(0, 15);
+      if (n && n !== wire) app.send(`GNAME ${g} ${n}`);
+    } else if (act === 'forget' && confirm(t('Forget {name}? The wand will not recognise it any more.', { name }))) {
       app.send(`BIND ${g} -`);
       app.send(`GCLR ${g}`);
     }
+  });
+
+  // ---------------------------------------------------------------- assign an action
+  // A device button, the knight's Hit / Heal, another IR code on the wand, or nothing.
+  const actDlg = $('#actionDlg');
+  let assigning = -1;
+  function openAssign(g) {
+    assigning = g;
+    const info = app.info();
+    const cur = info?.g?.[g]?.b ?? -1;
+    const dev = app.devicesApi(), kn = app.knightApi();
+    const curKey = dev.keyOfSlot(cur);
+    const ks = kn.slots();
+    const groups = {};
+    for (const c of dev.choices()) (groups[c.name] ||= []).push(c);
+    const devHtml = Object.entries(groups).map(([n, list]) => `<h3>${esc(n)}</h3>` + list.map((c) =>
+      `<button class="act-choice ${curKey && curKey.dev === c.dev && curKey.key === c.key ? 'on' : ''}" data-dev="${c.dev}" data-key="${c.key}" ${c.known ? '' : 'disabled'}>${esc(c.label)}${c.known ? '' : ` <span class="muted small">· ${t('not learned yet')}</span>`}</button>`).join('')).join('');
+    const knHtml = ks ? `<h3>${t('Knight')}</h3>
+      <button class="act-choice ${ks.hit >= 0 && cur === ks.hit ? 'on' : ''}" data-knight="hit">⚔️ ${t('Hit the knight')}</button>
+      <button class="act-choice ${ks.heal >= 0 && cur === ks.heal ? 'on' : ''}" data-knight="heal">✨ ${t('Heal the knight')}</button>` : '';
+    const others = (info?.c || []).map((c, i) => ({ c, i })).filter(({ c, i }) => c.k && !dev.keyOfSlot(i) && !(ks && (i === ks.hit || i === ks.heal)));
+    const otherHtml = others.length ? `<h3>${t('Other IR codes on the wand')}</h3>` + others.map(({ i }) =>
+      `<button class="act-choice ${cur === i ? 'on' : ''}" data-slot="${i}">${esc(app.codeLabel(i))}</button>`).join('') : '';
+    $('#actionDlgBody').innerHTML = `<h2>${t('What should {name} do?', { name: esc(displayName(info?.g?.[g]?.n)) })}</h2>
+      <div class="act-list">${devHtml || `<p class="muted small">${t('Add a device first in the Devices tab.')}</p>`}${knHtml}${otherHtml}
+        <h3>&nbsp;</h3><button class="act-choice ${cur < 0 ? 'on' : ''}" data-none="1">— ${t('No action')}</button></div>
+      <menu><button data-close="1">${t('Cancel')}</button></menu>`;
+    actDlg.showModal();
+  }
+  actDlg.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const g = assigning;
+    const cur = app.info()?.g?.[g]?.b ?? -1;
+    const dev = app.devicesApi();
+    if (b.dataset.close) return actDlg.close();
+    if (b.dataset.dev) dev.assign(g, b.dataset.dev, b.dataset.key);
+    else if (b.dataset.knight) app.knightApi().assign(b.dataset.knight, g);
+    else if (b.dataset.slot) { app.send(`BIND ${g} ${b.dataset.slot}`); app.backup('spell'); }
+    else if (b.dataset.none) {
+      const k = dev.keyOfSlot(cur);
+      if (k) dev.assign(-1, k.dev, k.key);  // frees the button's IR slot too
+      else app.send(`BIND ${g} -`);
+      app.toast(t('{spell} now does nothing', { spell: displayName(app.info()?.g?.[g]?.n) }));
+    }
+    actDlg.close();
   });
   $('#moreSpells').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-act=learn]');
@@ -79,7 +147,7 @@ export function initSpells(app) {
 
   // ---------------------------------------------------------------- trainer
   /** open({ slot }) an existing spell, ({ id }) a catalog spell, ({ custom: name }) a new own spell. */
-  function open({ slot = -1, id = null, custom = null } = {}) {
+  function open({ slot = -1, id = null, custom = null, retrain = false } = {}) {
     if (!app.connected()) return;
     const gs = gestures();
     let spell = null, wire, isNew = false;
@@ -93,6 +161,7 @@ export function initSpells(app) {
       isNew = true;
     }
     if (slot < 0) return app.toast(t('All 8 slots are used. Forget a spell first.'), true);
+    if (retrain) isNew = true;  // same slot and name, fresh samples (the action stays)
     Object.assign(tr, { slot, spell, wire, custom: !spell, count: isNew ? 0 : gs[slot].c, warn: null, testing: false, done: false,
       msg: t('Hold the wand still and centred. Press Record, wait for GO, then do the spell once.') });
     if (isNew) app.send(`GCLR ${slot}`);

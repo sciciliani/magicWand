@@ -7,7 +7,7 @@
 //
 // Own art: drop app/spells/<id>.png (square, transparent) and it replaces the
 // drawing everywhere.
-import { t } from './i18n.js?v=4';
+import { t } from './i18n.js?v=5';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 

@@ -8,7 +8,7 @@
 // (training-moves.js). A wrong move is taken back on the wand (GUNDO), so only
 // good samples stay. Moving before GO restarts the count: the wand must be
 // still and centred before every spell.
-import { MoveCatcher, measure, judge, describe } from './training-moves.js?v=5';
+import { MoveCatcher, measure, judge, describe } from './training-moves.js?v=6';
 
 const BEAT_MS = 750;        // "Ready…" -> "one X…" -> REC
 const GO_AFTER_ARMED = 600; // the wand's tick, tick, GO takes ~650 ms after REC

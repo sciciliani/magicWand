@@ -3,15 +3,15 @@
 //
 // Tabs: Home (live motion, last spell), Spells, Devices, Knight, Wizard (the
 // first-time setup), Settings (backups), IR codes (raw slots), Log.
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=13';
-import { LIBRARY, learnedKey } from './ir-presets.js?v=13';
-import { initTraining } from './training.js?v=6';
-import { initSpells } from './spells.js?v=3';
-import { initDevices } from './devices.js?v=2';
-import { initKnight } from './knight.js?v=2';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=2';
-import { loadProfile, saveProfile, wandId, wandIsEmpty, factoryNamed, listBackups, addBackup, lastWand } from './profile.js?v=2';
-import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=4';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=14';
+import { LIBRARY, learnedKey } from './ir-presets.js?v=14';
+import { initTraining } from './training.js?v=7';
+import { initSpells } from './spells.js?v=4';
+import { initDevices } from './devices.js?v=3';
+import { initKnight } from './knight.js?v=3';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=3';
+import { loadProfile, saveProfile, wandId, wandIsEmpty, factoryNamed, listBackups, addBackup, lastWand } from './profile.js?v=3';
+import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -192,9 +192,10 @@ const shared = {
   send: (l) => send(l), connected: () => !!state.link, info: () => state.info, log: (x) => logLine(x, 'in'), perform,
   profile, saveProfile: storeProfile, slotFor, freeSlot, codeLabel, capture, backup, toast: (x, e) => toast(x, e),
   practice: (on) => send(`PRACTICE ${on ? 1 : 0}`),
+  refresh: () => refreshInfo(),
 };
 const training = initTraining({ ...shared, renameWand: (n) => send(`SET name ${n}`), goto: (tab, what) => goto(tab, what) });
-const spells = initSpells({ ...shared, goto: (tab) => showTab(tab) });
+const spells = initSpells({ ...shared, goto: (tab) => showTab(tab), devicesApi: () => devices, knightApi: () => knight });
 const devices = initDevices(shared);
 const knight = initKnight(shared);
 
@@ -295,7 +296,7 @@ async function connectTo(device, { quiet = false } = {}) {
   if (connectDlg.open) connectDlg.close();
   $('#reconnectBar').hidden = true;
   document.body.classList.remove('offline');
-  send('HELLO');
+  refreshInfo();
   training.onConnect();
   updateStream();
   return true;
@@ -353,6 +354,16 @@ function onClosed() {
   autoReconnect([dev], wasOn ? t('Lost {name}. It may have fallen asleep.', { name }) : '');
 }
 
+// The wand's full state (INFO, ~1.5 KB = dozens of Bluetooth packets) is asked
+// for at most once per burst of changes: several commands in a row (record,
+// undo, bind…) used to ask for it after every single one, which flooded the
+// link and could freeze the wand's Bluetooth.
+let infoTimer = 0;
+function refreshInfo() {
+  clearTimeout(infoTimer);
+  infoTimer = setTimeout(() => { if (state.link) send('HELLO'); }, 700);
+}
+
 function send(line) {
   if (!state.link) return toast(t('Connect the wand first'), true);
   logLine(line, 'out');
@@ -384,12 +395,12 @@ function onLine(line) {
       renderStatus();
       break;
     case 'CAL':
-      if (p[0] === 'ok') { toast(t('Direction calibrated ✓')); send('HELLO'); }
+      if (p[0] === 'ok') { toast(t('Direction calibrated ✓')); refreshInfo(); }
       else if (p[0] === 'fail') toast(t('Calibration failed: keep the wand still, tip up'), true);
       else toast(t('Hold the wand still with the tip pointing straight up…'));
       break;
     case 'OK':
-      if (['GNAME', 'GCLR', 'CODE', 'CNAME', 'CCLR', 'BIND', 'SET', 'RESET', 'GUNDO', 'GTHR', 'GLOAD'].includes(p[0])) send('HELLO');
+      if (['GNAME', 'GCLR', 'CODE', 'CNAME', 'CCLR', 'BIND', 'SET', 'RESET', 'GUNDO', 'GTHR', 'GLOAD'].includes(p[0])) refreshInfo();
       if (p[0] === 'CODE' || p[0] === 'CCLR') delete state.captured[+p[1]];  // slot replaced: old capture info is stale
       if (p[0] === 'RESET') state.captured = {};
       if ((p[0] === 'SEND' || p[0] === 'TRY') && !knightPairing()) toast(t('IR sent. Did the device react?'));
@@ -454,7 +465,7 @@ function onCast(g, c, fired) {
 
 function onRec(g, what, rest) {
   if (what === 'armed') state.recording = g;
-  else if (what === 'ok' || what === 'timeout') { state.recording = -1; if (what === 'ok') send('HELLO'); }
+  else if (what === 'ok' || what === 'timeout') { state.recording = -1; if (what === 'ok') refreshInfo(); }
 }
 
 // LEARN c count 3 / count 2 / count 1 / go / waiting /
@@ -474,7 +485,7 @@ function onLearn(c, what, n, hex, reps, khz) {
     if (what === 'ok') toast(t('Captured {code} ✓', { code: got }));
     else if (what === 'unsupported') toast(t("Received something, but couldn't decode it. Try again, closer"), true);
     else toast(t('Nothing received. Try closer, within 10 cm'), true);
-    send('HELLO');
+    refreshInfo();
   }
 }
 

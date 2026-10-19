@@ -396,3 +396,19 @@ dialog.spell-dlg, dialog.dev-dlg { max-width: min(560px, calc(100% - 32px)); wid
 .backups li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
 .backups li span .small { display: block; }
 .reconnect-bar[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- spell card menu, assign dialog */
+.spell-actions { position: relative; }
+.menu-btn { font-size: 18px; line-height: 1; padding: 4px 12px; }
+.card-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 4; min-width: 220px; display: grid; gap: 2px; padding: 6px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px #000a;
+}
+.card-menu button { text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 6px; }
+.card-menu button:hover { background: #e3bd6218; }
+.assign-link { color: var(--gold); text-decoration: none; padding: 2px 0; font-size: 13px; }
+dialog.action-dlg { width: 460px; }
+.act-list { display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.act-list h3 { margin: 8px 0 0; font: 500 12px var(--display); letter-spacing: 1px; color: var(--muted); }
+.act-choice { text-align: left; }
+.act-choice.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }

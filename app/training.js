@@ -9,9 +9,9 @@
 //                  treasures (coming), or skip
 //
 // The wizard speaks every line (a man's voice) and types it in his bubble.
-import { SETUP_SPELLS, spellIcon, playIcon } from './spell-book.js?v=2';
-import { Recorder } from './recorder.js?v=3';
-import { t, lang, SPEECH_TAG } from './i18n.js?v=4';
+import { SETUP_SPELLS, spellIcon, playIcon } from './spell-book.js?v=3';
+import { Recorder } from './recorder.js?v=4';
+import { t, lang, SPEECH_TAG } from './i18n.js?v=5';
 
 const NEEDED = 3;  // good samples per spell
 const BEATS = ['Ready…', 'one {name}…', 'GO!'];  // the count before every attempt
