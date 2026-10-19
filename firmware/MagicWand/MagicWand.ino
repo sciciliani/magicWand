@@ -466,13 +466,15 @@ static void onSegment() {
   if (!m.accepted || practice) return;  // unrecognized moves stay silent; practice never fires
   int c = settings.bind[m.gid] == kNoBinding ? -1 : settings.bind[m.gid];
   bool fire = c >= 0 && codes[c].khz && (CAST_WHILE_CHARGING || !power::onCharger());
-  haptics::play(haptics::kCast);
-  status::flash(status::kCast);
+  // IR first, then the buzz: the motor never runs while the IR LED pulses,
+  // so the two never pull current from the battery at the same time.
   if (fire) {
     status::solid(true);
     ir::send(codes[c]);
     status::solid(false);
   }
+  haptics::play(haptics::kCast);
+  status::flash(status::kCast);
   comm::outf("CAST %d %d %d", m.gid, c, fire);
   cooldownUntil = millis() + COOLDOWN_MS;
 }
