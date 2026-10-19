@@ -1,9 +1,9 @@
 // spells.js — the Spells tab: the spells on the wand, the ones it can still
 // learn, your own spells, and the trainer (1, 2, 3… GO, three samples,
 // sensitivity, a warning when a new spell looks like an existing one).
-import { SPELLS, spellIcon, playIcon, spellOfName, displayName, onArt } from './spell-book.js?v=1';
-import { Recorder } from './recorder.js?v=1';
-import { t } from './i18n.js?v=3';
+import { SPELLS, spellIcon, playIcon, spellOfName, displayName, onArt } from './spell-book.js?v=2';
+import { Recorder } from './recorder.js?v=3';
+import { t } from './i18n.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

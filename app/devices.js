@@ -6,9 +6,9 @@
 // your own remote (raw timings). The wand only stores the buttons that a spell
 // casts: mapping a spell uploads that one code to a free IR slot and binds it.
 // Test sends a code once without storing it (TRY).
-import { LIBRARY, identify } from './ir-presets.js?v=12';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=1';
-import { t } from './i18n.js?v=3';
+import { LIBRARY, identify } from './ir-presets.js?v=13';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=2';
+import { t } from './i18n.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

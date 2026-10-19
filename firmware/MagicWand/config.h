@@ -7,7 +7,7 @@
 //         Tools > Protocol stack > BLE (Arduino)     <-- required (ArduinoBLE API)
 #pragma once
 
-#define FW_VERSION "0.5.0-mg24"
+#define FW_VERSION "0.5.1-mg24"
 #define BLE_NAME_PREFIX "Wand"  // advertised as "Wand-XXXX"
 
 // ------------------------------------------------------------------ pins
@@ -66,6 +66,11 @@
 // ------------------------------------------------------------------ power
 // Deep sleep = EM4 (~2 uA). Waking from EM4 is a full reboot.
 #define IDLE_SLEEP_MS 30000UL
+// While the app is connected the wand stays awake as long as it is used
+// (moved, or sent a command). Left alone with the app open (a tab left on the
+// desk, or the app reconnecting by itself after a bump woke the wand) it still
+// sleeps after this long. Before 0.5.1 it never slept while connected.
+#define CONNECTED_IDLE_MS 180000UL
 #define STILL_ENERGY 25.0f
 
 // How the wand notices it was picked up:

@@ -48,6 +48,7 @@ export const TUNE = {
   stopHold: 10,      // 400 ms of calm (a slow zigzag pauses at each end)
   minPath: 15,       // shorter tip paths (deg) are just jitter
   maxDur: 4,         // longer = not one move
+  pokeMaxPath: 20,   // a poke turns the tip less than this (deg)
   // slow/fast compare the move's core (where the tip is above a third of
   // its top speed), not the wobble after a hard stop.
   circle: { minTurn: 270, almostTurn: 150, minRound: 0.3, slow: 1.5, minPeak: 150, fast: 0.45 },
@@ -138,8 +139,11 @@ export function measure(raw) {
 export function judge(target, m) {
   const no = (kind, say) => ({ ok: false, kind, say });
   const T = TUNE[target];
+  // A poke pushes the wand along its own length while the tip barely turns.
+  // Swinging the tip (a stroke, a lift) ALSO pushes along the wand (the arm
+  // swings it like a sling), so "poke" needs both: lots of push, little turn.
   const wrongKind = m.twist > m.path * 0.8 ? 'That was a twist of the wrist. Move the whole tip instead.'
-    : m.thrust * 150 > m.path ? 'That was a poke forward. Move the tip through the air instead.' : null;
+    : m.thrust * 150 > m.path && m.path < TUNE.pokeMaxPath ? 'That was a poke forward. Move the tip through the air instead.' : null;
   if (m.tooLong) return no('faster', 'Too slow, I lost track. One quick, clean move.');
   if (target === 'circle') {
     if (m.active > T.slow || m.peak < T.minPeak) return no('faster', 'Faster! A circle takes about one second.');

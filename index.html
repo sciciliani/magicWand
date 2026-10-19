@@ -152,7 +152,7 @@
         <h2 data-i18n>Battery &amp; sleep</h2>
         <label><span data-i18n>Sleep after</span> <output id="sleepOut"></output>
           <input type="range" id="sleep" min="10" max="300" step="5" />
-          <span class="hint" data-i18n>No motion for this long puts the wand in deep sleep. Picking it up wakes it. It never sleeps while this app is connected: use Sleep now to put it to sleep.</span>
+          <span class="hint" data-i18n>No motion for this long puts the wand in deep sleep. Picking it up wakes it. With this app connected it waits 3 minutes without motion or commands. Sleep now puts it to sleep at once.</span>
         </label>
         <label><span data-i18n>Wake sensitivity</span> <output id="wakeOut"></output>
           <input type="range" id="wake" min="1" max="12" step="1" />
@@ -240,6 +240,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script type="module" src="app/app.js?v=19"></script>
+  <script type="module" src="app/app.js?v=21"></script>
 </body>
 </html>

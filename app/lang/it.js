@@ -41,7 +41,7 @@ export default {
   "Only needed if the board is mounted differently. Hold the tip straight up for 1 s.": "Serve solo se la scheda è montata diversamente. Tieni la punta dritta in alto per 1 s.",
   "Battery &amp; sleep": "Batteria e riposo",
   "Sleep after": "Dormi dopo",
-  "No motion for this long puts the wand in deep sleep. Picking it up wakes it. It never sleeps while this app is connected: use Sleep now to put it to sleep.": "Senza movimento per questo tempo, la bacchetta va in riposo profondo. Sollevarla la sveglia. Non dorme mai mentre questa app è collegata: usa Dormi ora per farla dormire.",
+  "No motion for this long puts the wand in deep sleep. Picking it up wakes it. With this app connected it waits 3 minutes without motion or commands. Sleep now puts it to sleep at once.": "Senza movimento per questo tempo, la bacchetta va in riposo profondo. Sollevarla la sveglia. Con questa app collegata aspetta 3 minuti senza movimento né comandi. Dormi ora la fa dormire subito.",
   "Wake sensitivity": "Sensibilità di risveglio",
   "How much the wand must be tilted to wake up: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Higher ignores table bumps.": "Quanto va inclinata la bacchetta per svegliarla: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Più alto ignora i colpi sul tavolo.",
   "Vibration feedback": "Vibrazione",

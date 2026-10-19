@@ -10,8 +10,8 @@ const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // wand -> app (notify)
 // only accepts one packet per write (MTU 23).
 let CHUNK = 180;
 
-import { t } from './i18n.js?v=3';
-import { nec } from './ir-presets.js?v=12';
+import { t } from './i18n.js?v=4';
+import { nec } from './ir-presets.js?v=13';
 
 export const bluetoothAvailable = () => !!navigator.bluetooth;
 

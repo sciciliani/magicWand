@@ -800,8 +800,8 @@ void loop() {
     systemReset();
   }
 
-  // Idle -> deep sleep, but never while the app is connected: then the wand
-  // only sleeps when asked (SLEEP command / "Sleep now" in the app).
+  // Idle -> deep sleep. With the app connected it waits longer
+  // (CONNECTED_IDLE_MS): the app keeps it awake only while it is being used.
   static bool wasConnected = false;
   bool connected = comm::bleConnected();
   if (connected != wasConnected) lastMotionMs = millis();  // connect/disconnect = activity
@@ -811,7 +811,8 @@ void loop() {
   // AFTER `now` (sampleOnce ran in between); unsigned "now - later" wraps to a
   // huge number and used to put the wand to sleep while it was moving.
   int32_t idleFor = (int32_t)(millis() - lastMotionMs);
-  if (!connected && mode == kNormal && !haptics::busy() && idleFor > (int32_t)settings.idleSleepMs) goSleep("idle");
+  uint32_t idleLimit = connected && settings.idleSleepMs < CONNECTED_IDLE_MS ? CONNECTED_IDLE_MS : settings.idleSleepMs;
+  if (mode == kNormal && !haptics::busy() && idleFor > (int32_t)idleLimit) goSleep(connected ? "idle (app connected but unused)" : "idle");
 
   power::where(10);  // loop: end (idle delay)
   // Let FreeRTOS idle the CPU until the next sample is due.

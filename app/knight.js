@@ -7,9 +7,9 @@
 //
 // Every knight paired with this wand learns the same two codes, so a spell
 // hits whichever knight you point at. More knights = pair each one.
-import { battleCodes, codeKey, LIBRARY } from './ir-presets.js?v=12';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=1';
-import { t } from './i18n.js?v=3';
+import { battleCodes, codeKey, LIBRARY } from './ir-presets.js?v=13';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=2';
+import { t } from './i18n.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

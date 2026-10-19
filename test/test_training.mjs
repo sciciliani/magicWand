@@ -35,6 +35,13 @@ for (const d of data.filter((x) => ['hit', 'stroke', 'tipup'].includes(x.move) &
   data.push({ move: d.move, kind: 'wobble', f: rows });
 }
 
+// A real swing also pushes the wand along its length (the arm swings it like a
+// sling): the same strokes, lifts and hits with that push added must still pass.
+for (const d of data.filter((x) => ['hit', 'stroke', 'tipup', 'zigzag', 'circle'].includes(x.move) && x.kind === 'ok')) {
+  const rows = d.f.map((r) => [r[0], r[1], r[2], Math.round(Math.hypot(r[0], r[1]) * 1.6), r[4]]);
+  data.push({ move: d.move, kind: 'sling', f: rows });
+}
+
 const stats = {};
 const bump = (k, ok) => { stats[k] ??= [0, 0]; stats[k][0] += ok ? 1 : 0; stats[k][1]++; };
 for (const d of data) {
@@ -49,6 +56,10 @@ for (const d of data) {
       const v = seg && judge(target, measure(seg));
       bump(`${target}: done right -> yes`, v?.ok);
       if (verbose && !v?.ok) console.log('   ', target, v?.say, seg && describe(measure(seg)));
+    } else if (d.kind === 'sling' && d.move === target) {
+      const v = seg && judge(target, measure(seg));
+      bump(`${target}: swing that also pushes along the wand -> yes`, v?.ok);
+      if (verbose && !v?.ok) console.log('   sling', target, v?.say, seg && describe(measure(seg)));
     } else if (d.kind === 'wobble' && d.move === target) {
       const v = seg && judge(target, measure(seg));
       bump(`${target}: hard snap + wobble -> yes`, v?.ok);
@@ -68,7 +79,7 @@ for (const d of data) {
     }
   }
 }
-const need = { 'wobble -> yes': 0.9, 'done right': 0.9, 'slower"': 0.85, 'faster"': 0.85, rejected: 0.95 };
+const need = { 'wand -> yes': 0.9, 'wobble -> yes': 0.9, 'done right': 0.9, 'slower"': 0.85, 'faster"': 0.85, rejected: 0.95 };
 for (const [k, [ok, n]] of Object.entries(stats)) {
   const min = Object.entries(need).find(([key]) => k.includes(key))[1];
   check(ok / n >= min, `${k}: ${ok}/${n} (need ${Math.round(min * 100)}%)`);

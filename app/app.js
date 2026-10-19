@@ -3,15 +3,15 @@
 //
 // Tabs: Home (live motion, last spell), Spells, Devices, Knight, Wizard (the
 // first-time setup), Settings (backups), IR codes (raw slots), Log.
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=12';
-import { LIBRARY, learnedKey } from './ir-presets.js?v=12';
-import { initTraining } from './training.js?v=4';
-import { initSpells } from './spells.js?v=1';
-import { initDevices } from './devices.js?v=1';
-import { initKnight } from './knight.js?v=1';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=1';
-import { loadProfile, saveProfile, wandId, wandIsEmpty, factoryNamed, listBackups, addBackup, lastWand } from './profile.js?v=1';
-import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=3';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=13';
+import { LIBRARY, learnedKey } from './ir-presets.js?v=13';
+import { initTraining } from './training.js?v=6';
+import { initSpells } from './spells.js?v=3';
+import { initDevices } from './devices.js?v=2';
+import { initKnight } from './knight.js?v=2';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=2';
+import { loadProfile, saveProfile, wandId, wandIsEmpty, factoryNamed, listBackups, addBackup, lastWand } from './profile.js?v=2';
+import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -241,6 +241,9 @@ async function autoReconnect(known, why = '') {
   others.onchange = () => { target = known[+others.value]; tries = 0; };
   let tries = 0;
   while (g === autoGen && !state.link) {
+    // In the background (another tab, minimised) don't grab the wand: a wand
+    // held by a forgotten page never sleeps and drains its battery.
+    if (document.visibilityState === 'hidden') { await sleep(2000); continue; }
     tries++;
     $('#reconnectMsg').textContent = (why && tries === 1 ? why + ' ' : '') +
       t('Reconnecting to {name}… pick it up to wake it.', { name: target.name || 'Wand' }) + (tries > 1 ? ` (${tries})` : '');
@@ -312,11 +315,21 @@ function stopStream() {
 }
 // TEST (ble-silabs): page-exit STREAM 0 disabled so the wand gets a link that
 // drops mid-stream on close/reload. Uncomment the three marked lines to restore.
+// A page left in the background lets the wand go after a minute, so it can
+// sleep (it reconnects by itself when the page is shown again).
+let hiddenTimer = 0;
 document.addEventListener('visibilitychange', () => {
   training.onShown(shownTab() === 'training' && document.visibilityState === 'visible');
+  clearTimeout(hiddenTimer);
   if (!state.link) return;
-  if (document.visibilityState === 'hidden') { /* TEST stopStream(); */ }
-  else updateStream();
+  if (document.visibilityState === 'hidden') {
+    hiddenTimer = setTimeout(() => {
+      if (document.visibilityState !== 'hidden' || !state.link || state.backupBusy) return;
+      state.release = true;
+      stopStream();
+      setTimeout(() => state.link?.disconnect(), 300);
+    }, 60000);
+  } else updateStream();
 });
 // TEST window.addEventListener('pagehide', stopStream);
 

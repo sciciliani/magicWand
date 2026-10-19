@@ -41,7 +41,7 @@ export default {
   "Only needed if the board is mounted differently. Hold the tip straight up for 1 s.": "Nur nötig, wenn die Platine anders eingebaut ist. Halte die Spitze 1 s lang senkrecht nach oben.",
   "Battery &amp; sleep": "Akku &amp; Ruhezustand",
   "Sleep after": "Schlafen nach",
-  "No motion for this long puts the wand in deep sleep. Picking it up wakes it. It never sleeps while this app is connected: use Sleep now to put it to sleep.": "So lange ohne Bewegung, und der Zauberstab geht in den Tiefschlaf. Hochheben weckt ihn. Solange diese App verbunden ist, schläft er nie: Mit Jetzt schlafen legst du ihn schlafen.",
+  "No motion for this long puts the wand in deep sleep. Picking it up wakes it. With this app connected it waits 3 minutes without motion or commands. Sleep now puts it to sleep at once.": "So lange ohne Bewegung, und der Zauberstab geht in den Tiefschlaf. Hochheben weckt ihn. Ist diese App verbunden, wartet er 3 Minuten ohne Bewegung oder Befehle. Mit Jetzt schlafen schläft er sofort.",
   "Wake sensitivity": "Aufweck-Empfindlichkeit",
   "How much the wand must be tilted to wake up: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Higher ignores table bumps.": "Wie weit der Zauberstab gekippt werden muss, um aufzuwachen: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Höher ignoriert Stöße gegen den Tisch.",
   "Vibration feedback": "Vibration",

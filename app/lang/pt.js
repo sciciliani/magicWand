@@ -41,7 +41,7 @@ export default {
   "Only needed if the board is mounted differently. Hold the tip straight up for 1 s.": "Só é necessário se a placa estiver montada de outro jeito. Segure a ponta para cima por 1 s.",
   "Battery &amp; sleep": "Bateria e repouso",
   "Sleep after": "Dormir após",
-  "No motion for this long puts the wand in deep sleep. Picking it up wakes it. It never sleeps while this app is connected: use Sleep now to put it to sleep.": "Sem movimento por esse tempo, a varinha entra em repouso profundo. Ao pegá-la, ela acorda. Nunca dorme enquanto este app está conectado: use Dormir agora para fazê-la dormir.",
+  "No motion for this long puts the wand in deep sleep. Picking it up wakes it. With this app connected it waits 3 minutes without motion or commands. Sleep now puts it to sleep at once.": "Sem movimento por esse tempo, a varinha entra em repouso profundo. Ao pegá-la, ela acorda. Com este app conectado, ela espera 3 minutos sem movimento nem comandos. Dormir agora a faz dormir na hora.",
   "Wake sensitivity": "Sensibilidade para acordar",
   "How much the wand must be tilted to wake up: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Higher ignores table bumps.": "Quanto a varinha precisa ser inclinada para acordar: 3 ≈ 12°, 6 ≈ 24°, 10 ≈ 40°. Mais alto ignora batidas na mesa.",
   "Vibration feedback": "Vibração",
