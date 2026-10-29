@@ -76,6 +76,31 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 `g[].c` sample count, `g[].t` acceptance threshold, `g[].b` bound code (−1 none);
 `c[].k` carrier kHz (0 = empty slot), `c[].l` number of durations.
 
+
+## Firmware update over Bluetooth (0.6.0+)
+
+The XIAO MG24 ships with the Silicon Labs Gecko bootloader (`storage-internal-single-512k`).
+The wand receives a `.gbl` file into the bootloader's storage slot, checks it, and the bootloader
+installs it on restart. The running firmware is untouched until the very end, so a dropped link or a
+bad file leaves the wand on its current version. INFO has `"ota":1` when the firmware supports this.
+
+| App sends | Wand answers |
+|---|---|
+| `OTA` | `OTA INFO ok - slot=0x… len=… app=0x… nvm=0x… btl=0x… cap=0x… chunk=N` or `OTA INFO no <reason>` |
+| `OTA BEGIN <size> <crc32 hex>` | `OTA READY <chunk>` or `OTA ERR <reason>` |
+| file bytes, `chunk` at a time, on characteristic `6E400004-B5A3-F393-E0A9-E50E24DCCA9E` (write without response) | `OTA ACK <bytes received>` every 2 KB and at the end |
+| `OTA END` | CRC of the transfer, CRC read back from flash, bootloader image check, then `OTA OK …` and a restart into the new firmware; or `OTA ERR <reason>` |
+| `OTA ABORT` | `OTA ABORTED` |
+
+Reasons the wand refuses: `no-bootloader`, `bootloader-init`, `no-slot`, `needs-signed`, `needs-encrypted`,
+`slot-overlaps-app` (the running firmware reaches into the slot), `slot-overlaps-data` (the slot would erase NVM3:
+spells, codes, settings), `too-big`. The app keeps at most 6 KB beyond the last ACK in flight (the wand buffers 12 KB).
+While an update runs the wand doesn't sample motion and doesn't sleep; 15 s without data aborts it.
+
+Making the file: `make ota` compiles, then `tools/make_gbl.py` makes `app/fw/wand-<version>.gbl` (with Simplicity
+Commander, installed with the Silicon Labs core, or with its own GBL writer) and `app/fw/latest.json`, which the app
+reads to offer the update in Settings > Firmware.
+
 ## How IR codes are stored
 
 Codes are stored **decoded**, not as raw pulses: header mark/space, bit mark, "1"/"0" timing,

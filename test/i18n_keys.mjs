@@ -13,7 +13,7 @@ const html = read('index.html');
 for (const m of html.matchAll(/<(\w+)\b[^>]*?\sdata-i18n(?=[\s>])[^>]*>([\s\S]*?)<\/\1>/g)) add(m[2]);
 for (const m of html.matchAll(/data-i18n-(?:placeholder|title|alt)="([^"]+)"/g)) add(m[1]);
 // t('...') everywhere, say('...') / say(x ? '...' : '...') in training.js
-for (const f of ['app/app.js', 'app/wand-link.js', 'app/training.js', 'app/spells.js', 'app/devices.js', 'app/knight.js', 'app/spell-book.js']) {
+for (const f of ['app/app.js', 'app/wand-link.js', 'app/training.js', 'app/spells.js', 'app/devices.js', 'app/knight.js', 'app/spell-book.js', 'app/ota.js']) {
   const src = read(f);
   for (const m of src.matchAll(new RegExp(`\\bt\\(\\s*${STR}`, 'g'))) add(unq(m[1]));
   for (const m of src.matchAll(new RegExp(`\\bsay\\(\\s*${STR}`, 'g'))) add(unq(m[1]));
@@ -25,6 +25,8 @@ const tr = read('app/training.js');
 for (const m of tr.matchAll(new RegExp(`(?:BEATS = \\[|startCycle\\(false, )([^\\]\\n]*)`, 'g')))
   for (const s of m[1].matchAll(new RegExp(STR, 'g'))) add(unq(s[1]));
 for (const m of tr.matchAll(/\? '([A-Z][^']*[.!?…])' : null/g)) add(m[1]);
+// ota.js: why the wand refused an update
+for (const m of read('app/ota.js').matchAll(/^\s*'[a-z-]+': '([^']+)',$/gm)) add(m[1]);
 // spell book: names and how-tos
 for (const m of read('app/spell-book.js').matchAll(/(?:name|how): '([^']+)'/g)) add(m[1]);
 // setup purposes, device types, their default buttons and how-tos

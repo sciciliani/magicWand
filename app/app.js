@@ -3,15 +3,16 @@
 //
 // Tabs: Home (live motion, last spell), Spells, Devices, Knight, Wizard (the
 // first-time setup), Settings (backups), IR codes (raw slots), Log.
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=14';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=16';
 import { LIBRARY, learnedKey } from './ir-presets.js?v=14';
-import { initTraining } from './training.js?v=7';
-import { initSpells } from './spells.js?v=4';
-import { initDevices } from './devices.js?v=3';
-import { initKnight } from './knight.js?v=3';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=3';
+import { initTraining } from './training.js?v=8';
+import { initSpells } from './spells.js?v=5';
+import { initDevices } from './devices.js?v=4';
+import { initKnight } from './knight.js?v=4';
+import { initOta } from './ota.js?v=2';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=4';
 import { loadProfile, saveProfile, wandId, wandIsEmpty, factoryNamed, listBackups, addBackup, lastWand } from './profile.js?v=3';
-import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=5';
+import { t, applyStatic, initPickers, onLangChange } from './i18n.js?v=6';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -198,6 +199,13 @@ const training = initTraining({ ...shared, renameWand: (n) => send(`SET name ${n
 const spells = initSpells({ ...shared, goto: (tab) => showTab(tab), devicesApi: () => devices, knightApi: () => knight });
 const devices = initDevices(shared);
 const knight = initKnight(shared);
+const ota = initOta({
+  ...shared, expect, link: () => state.link, backupNow: () => takeBackup('before firmware update'),
+  expectRestart: (msg) => {
+    state.reconnectAfterRestart = msg;
+    setTimeout(() => state.link?.disconnect(), 4000);  // the wand restarts by itself; this is a fallback
+  },
+});
 
 function goto(tab, what) {
   showTab(tab);
@@ -348,8 +356,9 @@ function onClosed() {
   const dev = state.lastDevice;
   if (state.release || !dev) { state.release = false; return knownList().then((k) => (k.length ? autoReconnect(k, t('Wand released.')) : showConnect())); }
   if (state.reconnectAfterRestart) {
+    const msg = typeof state.reconnectAfterRestart === 'string' ? state.reconnectAfterRestart : t('The wand is restarting with its new name…');
     state.reconnectAfterRestart = false;
-    return sleep(2500).then(() => autoReconnect([dev], t('The wand is restarting with its new name…')));
+    return sleep(2500).then(() => autoReconnect([dev], msg));
   }
   autoReconnect([dev], wasOn ? t('Lost {name}. It may have fallen asleep.', { name }) : '');
 }
@@ -417,6 +426,7 @@ function onLine(line) {
   feedWaiters(line);
   training.onLine(tag, p);
   spells.onLine(tag, p);
+  ota.onLine(tag, p);
 }
 const knightPairing = () => !!document.querySelector('#knightArea .steps, #knightArea [data-act=pair-done]') || false;
 
@@ -426,6 +436,7 @@ function onInfo() {
   if (id !== state.id) { state.id = id; state.profile = loadProfile(id); }
   render();
   knight.onInfo();
+  ota.onInfo();
   if (state.checked) return;
   state.checked = true;
   const p = state.profile;
@@ -639,6 +650,7 @@ function renderSettings() {
   const on = !!(state.link && i);
   for (const id of ['thr', 'sleep', 'wake', 'haptics', 'calBtn', 'buzzBtn', 'sleepBtn', 'exportBtn', 'resetBtn', 'wandName', 'renameBtn', 'backupBtn', 'setupBtn', 'ownerName', 'ownerBtn'])
     $('#' + id).disabled = !on;
+  if (!ota.busy()) ota.render();
   if (!i) return;
   if (document.activeElement !== $('#wandName')) $('#wandName').value = (i.name || '').replace(/^Wand-/, '');
   if (document.activeElement !== $('#ownerName')) $('#ownerName').value = state.profile?.owner || '';
@@ -649,7 +661,8 @@ function renderSettings() {
   $('#haptics').disabled = !on || !i.motor;
   $('#buzzBtn').disabled = !on || !i.motor;
   $('#deviceInfo').textContent = JSON.stringify({ fw: i.fw, id: i.uid || '(firmware before 0.5.0)', battery: `${i.bat}% (${i.volts} V)`, charging: !!i.chg,
-    axis: i.axis, vibration_motor: !!i.motor, ir_receiver: !!i.irrx, storage: i.store || 'flash' }, null, 2);
+    axis: i.axis, vibration_motor: !!i.motor, ir_receiver: !!i.irrx, storage: i.store || 'flash',
+    sleep_stats: i.st ? { movement_checks: i.st[0], ms_per_check: i.st[1], wake_ups: i.st[2], seconds_awake: i.st[3], low_battery_checks: i.st[4] } : '(firmware 0.6.1+)' }, null, 2);
 }
 const live = (id, fmt) => $('#' + id).addEventListener('input', (e) => ($('#' + id + 'Out').textContent = fmt(e.target.value)));
 live('thr', (v) => (+v).toFixed(2));

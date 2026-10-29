@@ -18,7 +18,7 @@ SEEED_URL := https://files.seeedstudio.com/arduino/package_seeeduino_boards_inde
 CXX       ?= g++
 CHECK     := $(CXX) -std=gnu++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter -x c++ -include Arduino.h
 
-.PHONY: help sync test test-gesture test-ir test-training test-i18n check-fw setup compile upload monitor app clean
+.PHONY: help sync test test-gesture test-ir test-training test-i18n check-fw setup compile upload ota monitor app clean
 
 help:
 	@echo "make sync       copy firmware/common/gesture.* into both sketches"
@@ -27,6 +27,7 @@ help:
 	@echo "make setup      install the Silicon Labs core + LSM6DS3 library (arduino-cli)"
 	@echo "make compile    build for the XIAO MG24 Sense"
 	@echo "make upload     build + flash (PORT=$(PORT))"
+	@echo "make ota        build + make app/fw/wand-<version>.gbl for updates over Bluetooth"
 	@echo "make monitor    serial monitor at 115200 (type protocol commands, e.g. HELLO)"
 	@echo "make app        serve the web app at http://localhost:8000 (open in Chrome)"
 
@@ -97,3 +98,9 @@ app:
 
 clean:
 	rm -rf build
+
+# Firmware update file for the app (Settings > Firmware). Commit app/fw/ with the
+# app so the published page offers the update to every wand.
+ota:
+	arduino-cli compile --fqbn $(FQBN) $(BOARD_OPTS) --output-dir build/fw $(SKETCH)
+	python3 tools/make_gbl.py build/fw/MagicWand.ino.hex

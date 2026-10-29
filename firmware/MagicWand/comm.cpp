@@ -44,10 +44,14 @@ static const uuid_128 kNusRx = {{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
                                  0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E}};
 static const uuid_128 kNusTx = {{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
                                  0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E}};
+// 6E400004-...  OTA: the app writes firmware bytes here (ota.cpp)
+static const uuid_128 kOtaData = {{0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+                                   0x93, 0xF3, 0xA3, 0xB5, 0x04, 0x00, 0x40, 0x6E}};
 static const uint16_t kMaxPayload = 244;  // biggest notification we send (MTU 247 - 3)
 
 static const size_t kLineMax = 4096;
 static const size_t kRxRing = 4096;
+static const size_t kOtaRing = 12288;  // firmware bytes waiting for loop() to write them to flash
 
 // ---- written by the Bluetooth event task, read by loop() -----------------
 static char rxRing[kRxRing];                 // bytes the app wrote (event task -> loop)
@@ -63,9 +67,12 @@ static volatile uint16_t closeReason = 0;
 static volatile uint32_t opens = 0, closes = 0;
 static volatile bool advFailed = false;      // restart advertising failed: poll() retries
 static volatile bool stopping = false;       // end() ran: don't advertise again
+static uint8_t otaRing[kOtaRing];            // OTA bytes (event task -> loop)
+static volatile size_t otaHead = 0, otaTail = 0;
+static volatile uint32_t otaLost = 0;        // bytes dropped because the ring was full
 
 // ---- set once at start-up ------------------------------------------------
-static uint16_t rxHandle = 0, txHandle = 0;
+static uint16_t rxHandle = 0, txHandle = 0, otaHandle = 0;
 static uint8_t advSet = 0xFF;
 static bool started = false;  // GATT database + advertising are set up
 static char advName[24] = "Wand";
@@ -136,6 +143,12 @@ static void setUp() {
     sc = sl_bt_gattdb_add_uuid128_characteristic(session, nus, SL_BT_GATTDB_CHARACTERISTIC_NOTIFY, 0, 0, kNusTx,
                                                  sl_bt_gattdb_variable_length_value, kMaxPayload, 1, &zero,
                                                  &txHandle);
+  }
+  if (sc == SL_STATUS_OK) {
+    step = "ota characteristic";
+    sc = sl_bt_gattdb_add_uuid128_characteristic(
+        session, nus, SL_BT_GATTDB_CHARACTERISTIC_WRITE | SL_BT_GATTDB_CHARACTERISTIC_WRITE_NO_RESPONSE, 0, 0,
+        kOtaData, sl_bt_gattdb_variable_length_value, kMaxPayload, 1, &zero, &otaHandle);
   }
   if (sc == SL_STATUS_OK) sc = sl_bt_gattdb_start_service(session, nus);
   if (sc == SL_STATUS_OK) { step = "gattdb commit"; sc = sl_bt_gattdb_commit(session); }
@@ -312,6 +325,23 @@ void outf(const char* fmt, ...) {
 }
 
 bool bleConnected() { return started && linkUp; }
+
+// ---- OTA bytes (loop side) --------------------------------------------------
+size_t otaRead(uint8_t* dst, size_t max) {
+  size_t n = 0, t = otaTail, h = otaHead;
+  while (n < max && t != h) {
+    dst[n++] = otaRing[t];
+    t = (t + 1) % kOtaRing;
+  }
+  otaTail = t;
+  return n;
+}
+void otaClear() {
+  otaTail = otaHead;
+  otaLost = 0;
+}
+bool otaDropped() { return otaLost != 0; }
+uint16_t otaChunk() { return payload & ~3u; }  // biggest write the app may send (multiple of 4)
 bool bleNotifying() { return bleConnected() && subscribed; }
 
 void end() {
@@ -368,7 +398,20 @@ static void onEvent(sl_bt_msg_t* evt) {
 
     case sl_bt_evt_gatt_server_attribute_value_id: {
       const sl_bt_evt_gatt_server_attribute_value_t& a = evt->data.evt_gatt_server_attribute_value;
-      if (a.attribute != rxHandle || a.connection != conn) break;
+      if (a.connection != conn) break;
+      if (a.attribute == otaHandle && otaHandle) {
+        size_t h = otaHead;
+        for (uint8_t i = 0; i < a.value.len; i++) {
+          size_t next = (h + 1) % kOtaRing;
+          if (next == otaTail) { otaLost = otaLost + 1; break; }
+          otaRing[h] = a.value.data[i];
+          h = next;
+        }
+        __sync_synchronize();
+        otaHead = h;
+        break;
+      }
+      if (a.attribute != rxHandle) break;
       size_t h = rxHead;
       for (uint8_t i = 0; i < a.value.len; i++) {
         size_t next = (h + 1) % kRxRing;

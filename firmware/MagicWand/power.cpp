@@ -23,7 +23,10 @@ namespace power {
 // Backup RAM (survives EM4) layout, 32-bit words.
 // Starts at word 8 in case the core keeps its own bookkeeping in the first words.
 enum : uint32_t { kMagicAddr = 8, kGxAddr = 9, kGyAddr = 10, kGzAddr = 11, kPollsAddr = 12, kSensAddr = 13, kQuietAddr = 14, kWhereAddr = 15,
-                  kAxAddr = 16, kAyAddr = 17, kAzAddr = 18, kPendAddr = 19, kLowBatAddr = 20 };
+                  kAxAddr = 16, kAyAddr = 17, kAzAddr = 18, kPendAddr = 19, kLowBatAddr = 20,
+                  kStMagicAddr = 21, kStPollsAddr = 22, kStPollMsAddr = 23, kStWakesAddr = 24, kStAwakeAddr = 25,
+                  kStLowBatAddr = 26 };
+static const uint32_t kStMagic = 0x53544154;  // "STAT": sleep statistics are valid
 static const uint32_t kLowBatMagic = 0x4C4F5742;  // "LOWB": battery was low when the wand went to sleep
 static const uint32_t kQuietMagic = 0x51554945;  // "QUIE"
 static bool quiet = false;
@@ -35,6 +38,32 @@ static char why[64] = "reset";  // why this boot happened (printed in the BOOT l
 
 static uint32_t f2u(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 static float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
+
+// ---- sleep statistics (backup RAM: they survive deep sleep and the reset button,
+// and start from zero when the battery is connected or with STATS 0)
+static void stAdd(uint32_t addr, uint32_t v) { LowPower.deepSleepMemoryWrite(addr, LowPower.deepSleepMemoryRead(addr) + v); }
+static void stInit() {
+  if (LowPower.deepSleepMemoryRead(kStMagicAddr) == kStMagic) return;
+  for (uint32_t a = kStPollsAddr; a <= kStLowBatAddr; a++) LowPower.deepSleepMemoryWrite(a, 0);
+  LowPower.deepSleepMemoryWrite(kStMagicAddr, kStMagic);
+}
+void statsReset() {
+  LowPower.deepSleepMemoryWrite(kStMagicAddr, 0);
+  stInit();
+}
+void stats(Stats& st) {
+  stInit();
+  st.polls = LowPower.deepSleepMemoryRead(kStPollsAddr);
+  st.pollMs = LowPower.deepSleepMemoryRead(kStPollMsAddr);
+  st.wakes = LowPower.deepSleepMemoryRead(kStWakesAddr);
+  st.awakeS = LowPower.deepSleepMemoryRead(kStAwakeAddr) + millis() / 1000;   // + this wake-up so far
+  st.lowBat = LowPower.deepSleepMemoryRead(kStLowBatAddr);
+  // rough average current (assumed: ~6 mA during a check, ~12 mA awake, ~5 uA asleep)
+  double sleepS = st.polls * (WAKE_POLL_MS / 1000.0) + st.lowBat * (LOW_BAT_POLL_MS / 1000.0);
+  double totS = sleepS + st.pollMs / 1000.0 + st.awakeS;
+  st.hours = totS / 3600.0;
+  st.estUa = totS > 0 ? (st.pollMs / 1000.0 * 6000 + st.awakeS * 12000.0 + sleepS * 5) / totS : 0;
+}
 
 // EM4 for `ms`, woken by the BURTC timer (waking = a reboot). Same steps as
 // the core's LowPower.deepSleep(ms), with one difference: the core's version
@@ -55,6 +84,22 @@ static void em4SleepIrHeldLow(uint32_t ms) {
       GPIO_PinModeSet((GPIO_Port_TypeDef)port, pin, isIr ? gpioModePushPull : gpioModeDisabled, 0);
     }
   }
+  // Everything that switches something on must not float while the wand sleeps:
+  // a floating gate/enable can leave a part half on all night.
+  static const struct { GPIO_Port_TypeDef port; uint8_t pin; uint8_t level; } kHold[] = {
+      {gpioPortC, 2, 0},  // D2  motor driver: off
+      {gpioPortC, 7, 0},  // D7  IR receiver power: off
+      {gpioPortC, 8, 0},  // PC8 microphone enable: off
+      {gpioPortD, 5, 0},  // PD5 IMU power: off
+      {gpioPortD, 3, 0},  // PD3 battery divider enable: off
+      {gpioPortA, 6, 1},  // PA6 onboard SPI flash chip select: deselected (standby)
+      {gpioPortA, 7, 1},  // PA7 yellow LED (active LOW): off
+  };
+#if SLEEP_HOLD_PINS
+  for (const auto& h : kHold) GPIO_PinModeSet(h.port, h.pin, gpioModePushPull, h.level);
+#else
+  (void)kHold;
+#endif
 
   CMU_ClockSelectSet(cmuClock_EM4GRPACLK, cmuSelect_ULFRCO);
   CMU_ClockEnable(cmuClock_BURTC, true);
@@ -146,7 +191,7 @@ void earlyBoot() {
   // The button (above) still wakes the wand.
   if (LowPower.deepSleepMemoryRead(kLowBatAddr) == kLowBatMagic) {
     float v = pollBatteryVolts();
-    if (v > 2.5f && v < LOW_BAT_RESUME_V) sleepFor(LOW_BAT_POLL_MS);
+    if (v > 2.5f && v < LOW_BAT_RESUME_V) { stInit(); stAdd(kStLowBatAddr, 1); sleepFor(LOW_BAT_POLL_MS); }
     LowPower.deepSleepMemoryWrite(kLowBatAddr, 0);
   }
 
@@ -175,6 +220,7 @@ void earlyBoot() {
     LowPower.deepSleepMemoryWrite(kPollsAddr, LowPower.deepSleepMemoryRead(kPollsAddr) + 1);
     LowPower.deepSleepMemoryWrite(kPendAddr, 0);
     imu::powerOff();
+    stInit(); stAdd(kStPollsAddr, 1); stAdd(kStPollMsAddr, millis());
     sleepAgain();  // still lying there: back to sleep, BLE never started
   }
   // Moved. Confirm with a second check WAKE_CONFIRM_MS later: a bump on the
@@ -252,6 +298,7 @@ void deepSleep() {
   ir::forceOff();  // strong LOW (WAKE_IMU_INT: the core's deepSleep() holds pins as they are)
   digitalWrite(PIN_USER_LED, HIGH);
   comm::end();  // stops BLE and Serial (Serial left open can block EM4 wake-up)
+  stInit(); stAdd(kStWakesAddr, 1); stAdd(kStAwakeAddr, millis() / 1000);
 
 #if WAKE_MODE == WAKE_POLL
   // Remember "which way is down" so the poller can tell if we were moved.

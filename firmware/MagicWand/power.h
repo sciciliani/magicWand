@@ -31,4 +31,14 @@ bool quietBoot();  // this boot came from quietRestart()
 void where(uint8_t step);
 [[noreturn]] void deepSleep();
 
+// Where the battery goes, since the battery was connected (or STATS 0):
+// movement checks while asleep, full wake-ups, low-battery checks.
+struct Stats {
+  uint32_t polls, pollMs, wakes, awakeS, lowBat;
+  float hours;   // time covered
+  float estUa;   // rough average current (uA) from the above
+};
+void stats(Stats& st);
+void statsReset();
+
 }  // namespace power

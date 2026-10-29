@@ -18,6 +18,7 @@
 #include "haptics.h"
 #include "imu.h"
 #include "ir.h"
+#include "ota.h"
 #include "power.h"
 #include <WatchdogTimer.h>  // Silicon Labs core library
 #include "status.h"
@@ -80,17 +81,30 @@ static const char* wandName() {
   return name;
 }
 
+// "STATS polls=… check=…ms wakes=… awake=…s lowbat=… hours=… avg=…uA"
+static void sendStats() {
+  power::Stats st;
+  power::stats(st);
+  comm::outf("STATS polls=%lu check=%lums wakes=%lu awake=%lus lowbat=%lu hours=%s avg=%luuA",
+             (unsigned long)st.polls, (unsigned long)(st.polls ? st.pollMs / st.polls : 0), (unsigned long)st.wakes,
+             (unsigned long)st.awakeS, (unsigned long)st.lowBat, FX(st.hours, 1).s, (unsigned long)st.estUa);
+}
+
 static void sendInfo() {
-  static char buf[1600];
+  static char buf[1800];
+  power::Stats st;
+  power::stats(st);
   int n = snprintf(buf, sizeof(buf),
                    "INFO {\"name\":\"%s\",\"fw\":\"%s\",\"bat\":%u,\"volts\":%s,\"chg\":%d,\"axis\":[%s,%s,%s],"
                    "\"thr\":%s,\"sleep\":%lu,\"wake\":%u,\"haptics\":%u,\"motor\":%d,\"irrx\":%d,"
-                   "\"store\":\"%s\",\"uid\":\"%08lX%08lX\",\"g\":[",
+                   "\"store\":\"%s\",\"ota\":1,\"st\":[%lu,%lu,%lu,%lu,%lu],\"uid\":\"%08lX%08lX\",\"g\":[",
                    wandName(), FW_VERSION, power::batteryPercent(), FX(power::batteryVolts()).s, power::onCharger(),
                    FX(settings.axis[0], 3).s, FX(settings.axis[1], 3).s, FX(settings.axis[2], 3).s,
                    FX(settings.threshold).s,
                    (unsigned long)(settings.idleSleepMs / 1000), settings.wakeThreshold, settings.hapticsOn,
                    HAS_MOTOR, HAS_IR_RECEIVER, storage::backendName(),
+                   (unsigned long)st.polls, (unsigned long)(st.polls ? st.pollMs / st.polls : 0), (unsigned long)st.wakes,
+                   (unsigned long)st.awakeS, (unsigned long)st.lowBat,
                    (unsigned long)(getDeviceUniqueId() >> 32), (unsigned long)(getDeviceUniqueId() & 0xFFFFFFFFul));
   for (int g = 0; g < kMaxGestures; g++)
     n += snprintf(buf + n, sizeof(buf) - n, "%s{\"n\":\"%s\",\"c\":%u,\"t\":%s,\"b\":%d}", g ? "," : "",
@@ -182,6 +196,10 @@ static void handle(char* line) {
 
   if (!strcmp(cmd, "HELLO") || !strcmp(cmd, "INFO")) {
     sendInfo();
+  } else if (!strcmp(cmd, "OTA")) {  // firmware update over Bluetooth (ota.h)
+    char* a3 = strtok_r(nullptr, " ", &save);
+    streaming = false;
+    ota::command(a1, a2, a3);
   } else if (!strcmp(cmd, "PING")) {
     comm::out("PONG");
   } else if (!strcmp(cmd, "EXPORT")) {  // print a ready-to-paste default_spells.h
@@ -429,6 +447,9 @@ static void handle(char* line) {
     comm::out("OK BUZZ");
   } else if (!strcmp(cmd, "BAT")) {
     comm::outf("BAT %u %s %d", power::batteryPercent(), FX(power::batteryVolts()).s, power::onCharger());
+  } else if (!strcmp(cmd, "STATS")) {  // STATS = where the battery went, STATS 0 = start counting again
+    if (a1 && !strcmp(a1, "0")) power::statsReset();
+    sendStats();
   } else if (!strcmp(cmd, "SLEEP")) {
     goSleep("requested");
   } else if (!strcmp(cmd, "RESET")) {
@@ -692,6 +713,7 @@ void setup() {
   nextSampleUs = micros();
   comm::outf("BOOT %s %s wake=%d (%s)", name, FW_VERSION, power::wokeFromSleep(), power::wakeReason());
   comm::outf("IR timing: %s", ir::timingInfo());
+  sendStats();
 }
 
 void loop() {
@@ -716,6 +738,12 @@ void loop() {
 
   power::where(5);  // loop: readLine/handle
   if (char* line = comm::readLine()) handle(line);
+
+  if (ota::active()) {  // receiving a firmware update: nothing else until it's done
+    ota::poll();
+    lastMotionMs = millis();
+    return;
+  }
 
   uint32_t now = millis();
 

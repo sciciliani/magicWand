@@ -3,6 +3,7 @@
 // Both carry the same protocol (docs/PROTOCOL.md).
 #pragma once
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
 // Float -> text without printf("%f").  outf("%s", FX(v).s)  /  FX(v, 3).s
@@ -29,5 +30,11 @@ void serialOut(const char* line);  // USB Serial only (debug dumps), never to th
 bool bleConnected();
 bool bleNotifying();
 void end();        // before deep sleep
+
+// Firmware update bytes (OTA characteristic 6E400004), used by ota.cpp
+size_t otaRead(uint8_t* dst, size_t max);
+void otaClear();
+bool otaDropped();
+uint16_t otaChunk();  // biggest OTA write for this link (MTU - 3, multiple of 4)
 
 }  // namespace comm

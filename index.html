@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="app/style.css?v=20" />
+  <link rel="stylesheet" href="app/style.css?v=21" />
 </head>
 <body>
   <header>
@@ -164,6 +164,19 @@
           <button id="sleepBtn" data-i18n>Sleep now</button>
         </div>
       </div>
+      <div class="card form">
+        <h2 data-i18n>Firmware</h2>
+        <p><span data-i18n>On the wand:</span> <b id="fwCurrent">—</b> · <span data-i18n>Latest:</span> <b id="fwLatest">—</b></p>
+        <div class="row">
+          <button id="fwUpdateBtn" hidden></button>
+          <button id="fwFileBtn" data-i18n>Install from a file…</button>
+          <input type="file" id="fwFile" accept=".gbl" hidden />
+        </div>
+        <progress id="fwBar" class="fw-bar" max="1" value="0" hidden></progress>
+        <p id="fwStatus" class="muted small"></p>
+        <p id="fwNote" class="hint"></p>
+        <span class="hint" data-i18n>Updates come over Bluetooth and take about a minute. If anything goes wrong, the wand keeps the firmware it has.</span>
+      </div>
       <div class="card">
         <h2 data-i18n>Backups</h2>
         <p class="muted small" data-i18n>This browser keeps the last 5 copies of your wand (spells, IR codes, settings, devices). A copy is made after the setup and every time the wand learns something.</p>
@@ -242,6 +255,6 @@
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
-  <script type="module" src="app/app.js?v=22"></script>
+  <script type="module" src="app/app.js?v=24"></script>
 </body>
 </html>

@@ -4,10 +4,10 @@
 //
 // The language follows the browser (en, es, pt, it, de) unless one is picked
 // in the header (remembered in this browser).
-import es from './lang/es.js?v=4';
-import pt from './lang/pt.js?v=4';
-import it from './lang/it.js?v=4';
-import de from './lang/de.js?v=4';
+import es from './lang/es.js?v=5';
+import pt from './lang/pt.js?v=5';
+import it from './lang/it.js?v=5';
+import de from './lang/de.js?v=5';
 
 export const LANGS = { en: 'English', es: 'Español', pt: 'Português', it: 'Italiano', de: 'Deutsch' };
 const DICTS = { es, pt, it, de };

@@ -6,11 +6,12 @@
 const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // app -> wand (write)
 const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // wand -> app (notify)
+const NUS_OTA = '6e400004-b5a3-f393-e0a9-e50e24dcca9e'; // app -> wand: firmware update bytes (0.6.0+)
 // Long writes: try 180-byte chunks, fall back to 20 if the wand's BLE stack
 // only accepts one packet per write (MTU 23).
 let CHUNK = 180;
 
-import { t } from './i18n.js?v=5';
+import { t } from './i18n.js?v=6';
 import { nec } from './ir-presets.js?v=14';
 
 export const bluetoothAvailable = () => !!navigator.bluetooth;
@@ -67,12 +68,19 @@ export class BleWand {
     progress(t('Opening the channel…'));
     this.rx = await svc.getCharacteristic(NUS_RX);
     this.tx = await svc.getCharacteristic(NUS_TX);
+    this.ota = await svc.getCharacteristic(NUS_OTA).catch(() => null);  // firmware 0.6.0+
     this.tx.addEventListener('characteristicvaluechanged', (e) => this._onData(e.target.value));
     await this.tx.startNotifications();
     progress(t('Channel open. Saying hello…'));
   }
 
   disconnect() { this.device?.gatt?.connected && this.device.gatt.disconnect(); }
+
+  /** Firmware update bytes (one Bluetooth write, at most the size the wand asked for). */
+  async writeOta(bytes) {
+    if (!this.ota) throw new Error(t('the wand’s update channel wasn’t found. Turn Bluetooth off and on (Chrome may remember the wand’s old layout) and reconnect'));
+    await (this.ota.writeValueWithoutResponse ? this.ota.writeValueWithoutResponse(bytes) : this.ota.writeValue(bytes));
+  }
 
   /** Immediate write that skips the queue (used while the page is closing). */
   sendNow(line) {
@@ -190,6 +198,13 @@ export class MockWand {
   }
   onLine(cb) { this._line = cb; }
   onClose(cb) { this._close = cb; }
+  async writeOta(bytes) {
+    const o = this._ota;
+    if (!o) return;
+    await new Promise((r) => setTimeout(r, 1));
+    o.got += bytes.length;
+    if (o.got >= o.next || o.got === o.size) { this._line(`OTA ACK ${o.got}`); o.next = (Math.floor(o.got / 2048) + 1) * 2048; }
+  }
   async connect() {
     this._timer = setInterval(() => this._tick(), 40);
     this._emit('BOOT Wand-DEMO 0.1.0 wake=0');
@@ -226,7 +241,7 @@ export class MockWand {
 
   _info() {
     return 'INFO ' + JSON.stringify({
-      name: this.s.name, fw: '0.5.0-demo', bat: 76, volts: 3.92, chg: 0, axis: this.s.axis, thr: this.s.thr,
+      name: this.s.name, fw: this.s.fw || '0.5.0-demo', ota: 1, bat: 76, volts: 3.92, chg: 0, axis: this.s.axis, thr: this.s.thr,
       sleep: this.s.sleep, wake: this.s.wake, haptics: this.s.haptics, motor: 1, irrx: 1, uid: MOCK_UID,
       g: this.g, c: this.c.map(({ n, k, l }) => ({ n, k, l })),
     });
@@ -308,6 +323,17 @@ export class MockWand {
       case 'RESET':
         if (a1 === 'yes') { this._fresh(); this._save(); this.name = this.s.name; }
         this._emit(a1 === 'yes' ? 'OK RESET' : 'ERR type RESET yes'); break;
+      case 'OTA':
+        if (!a1) { this._emit('OTA INFO ok - slot=0x8100000 len=524288 app=0x8052000 nvm=0x8174000 btl=0x2010000 cap=0x20 chunk=240'); break; }
+        if (a1 === 'BEGIN') { this._ota = { size: +a2, got: 0, next: 2048 }; this._emit('OTA READY 240'); break; }
+        if (a1 === 'ABORT') { this._ota = null; this._emit('OTA ABORTED'); break; }
+        if (a1 === 'END') {
+          if (!this._ota || this._ota.got !== this._ota.size) { this._emit('OTA ERR short'); break; }
+          this._ota = null;
+          setTimeout(() => this._line('OTA OK installing, the wand restarts'), 900);
+          setTimeout(() => { this.s.fw = '0.6.0-demo'; this._save(); this.disconnect(); }, 1600);
+        }
+        break;
       case 'PING': this._emit('PONG'); break;
       default: this._emit(`ERR unknown ${cmd}`);
     }

@@ -7,7 +7,7 @@
 //         Tools > Protocol stack > BLE (Arduino)     <-- required (ArduinoBLE API)
 #pragma once
 
-#define FW_VERSION "0.5.1-mg24"
+#define FW_VERSION "0.6.1-mg24"
 #define BLE_NAME_PREFIX "Wand"  // advertised as "Wand-XXXX"
 
 // ------------------------------------------------------------------ pins
@@ -84,6 +84,9 @@
 #define WAKE_IMU_INT 1
 #define WAKE_MODE WAKE_POLL
 #define WAKE_POLL_MS 1000
+// Hold motor / IR receiver power / mic / IMU power / battery divider OFF and the flash
+// chip deselected while asleep (0 = let them float, as before 0.6.1)
+#define SLEEP_HOLD_PINS 1
 #define WAKE_TILT_DEG 12.0f      // change of pointing angle that counts as "picked up" at wake sensitivity 3 (scales with SET wake); rolling is ignored
 #define WAKE_SHAKE_G 0.12f       // or this much acceleration while checking
 // A movement must still be there on a second check this much later (a desk

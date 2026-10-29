@@ -7,8 +7,8 @@
 // casts: mapping a spell uploads that one code to a free IR slot and binds it.
 // Test sends a code once without storing it (TRY).
 import { LIBRARY, identify } from './ir-presets.js?v=14';
-import { spellIcon, spellOfName, displayName } from './spell-book.js?v=3';
-import { t } from './i18n.js?v=5';
+import { spellIcon, spellOfName, displayName } from './spell-book.js?v=4';
+import { t } from './i18n.js?v=6';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
