@@ -34,7 +34,7 @@ void where(uint8_t step);
 // Where the battery goes, since the battery was connected (or STATS 0):
 // movement checks while asleep, full wake-ups, low-battery checks.
 struct Stats {
-  uint32_t polls, pollMs, wakes, awakeS, lowBat;
+  uint32_t polls, pollMs, wakes, awakeS, lowBat, slow, bootMs;
   float hours;   // time covered
   float estUa;   // rough average current (uA) from the above
 };

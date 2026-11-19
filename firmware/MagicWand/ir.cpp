@@ -70,6 +70,7 @@ static const uint8_t kLedPin = PIN_IR_LED;   // port C pin number
 static const uint32_t ledMask = 1u << kLedPin;
 
 uint32_t pinMask() { return ledMask; }
+int timerIndex();
 
 // Strong push-pull drive, starting LOW, written straight to the GPIO registers
 // (the core's pinMode() is a no-op until the core has finished its own init).
@@ -199,6 +200,8 @@ static void hwFind() {
 }
 
 static inline bool useHw() { return hw && hwWanted; }
+
+int timerIndex() { return hw ? hw->idx : -1; }
 
 bool setHwCarrier(bool on) {
   hwWanted = on;
@@ -369,11 +372,40 @@ void send(const IrCode& code) {
   IrCode frame = code;
   frame.repeats = 1;
   bool useTimer = useHw() && hwStart(code.khz);
+  const uint32_t tStart = micros();
   for (int r = 0; r < reps; r++) {
     if (r > 0) pauseUs(code.gap ? code.gap : 40000);
     if (useTimer) transmitHw(frame);
     else transmit(frame);
   }
+  // "Hold the button": a real remote tapped for ~0.2 s keeps sending after the
+  // first frame. NEC sends short repeat bursts (9 ms mark, 2.25 ms space, 560 us
+  // mark) every 108 ms; Samsung resends the whole frame every 108 ms. The TV
+  // treats it as one press held briefly, so power toggles once and volume
+  // steps once, but a frame lost at long range gets another chance (Samsung)
+  // and the TV sees a longer, easier-to-catch burst. Other protocols already
+  // repeat as captured (Sony 3x, Coolix/RCA 2x) and are left alone.
+#if IR_HOLD_MS > 0
+  if (!code.pw && code.hdrMark) {
+    bool nec = code.hdrMark > 8100 && code.hdrMark < 9900 && code.hdrSpace > 3800 && code.hdrSpace < 5200;
+    bool samsung = code.hdrMark > 3800 && code.hdrMark < 5200 && code.hdrSpace > 3800 && code.hdrSpace < 5200 &&
+                   code.nbits >= 28 && code.nbits <= 40;
+    if (nec || samsung) {
+      IrCode rpt = frame;
+      if (nec) {  // header 9000/2250 + stop mark, no data bits
+        rpt.hdrMark = 9000; rpt.hdrSpace = 2250; rpt.bitMark = 560; rpt.nbits = 0; rpt.repeats = 1;
+      }
+      for (uint32_t k = 1;; k++) {
+        uint32_t at = k * 108000UL;                 // burst k starts here (us after the first frame)
+        if (at > (uint32_t)IR_HOLD_MS * 1000UL) break;
+        uint32_t now = micros() - tStart;
+        if (now < at) pauseUs(at - now);
+        if (useTimer) transmitHw(rpt);
+        else transmit(rpt);
+      }
+    }
+  }
+#endif
   if (useTimer) hwStop();
   ledOff();
 }

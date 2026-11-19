@@ -16,6 +16,7 @@
 #include "config.h"
 #include "gesture.h"
 #include "haptics.h"
+#include "sound.h"
 #include "imu.h"
 #include "ir.h"
 #include "ota.h"
@@ -85,8 +86,9 @@ static const char* wandName() {
 static void sendStats() {
   power::Stats st;
   power::stats(st);
-  comm::outf("STATS polls=%lu check=%lums wakes=%lu awake=%lus lowbat=%lu hours=%s avg=%luuA",
-             (unsigned long)st.polls, (unsigned long)(st.polls ? st.pollMs / st.polls : 0), (unsigned long)st.wakes,
+  comm::outf("STATS polls=%lu (slow %lu) check=%lums (start-up %lums) wakes=%lu awake=%lus lowbat=%lu hours=%s avg=%luuA",
+             (unsigned long)st.polls, (unsigned long)st.slow, (unsigned long)(st.polls ? st.pollMs / st.polls : 0),
+             (unsigned long)(st.polls ? st.bootMs / st.polls : 0), (unsigned long)st.wakes,
              (unsigned long)st.awakeS, (unsigned long)st.lowBat, FX(st.hours, 1).s, (unsigned long)st.estUa);
 }
 
@@ -329,6 +331,7 @@ static void handle(char* line) {
     memset(&k, 0, sizeof(k));
     if (!ir::decode(rawBuf, n, khz, k)) return comm::out("ERR TRY can't decode");
     status::solid(true);
+    sound::stop();
     ir::send(k);
     status::solid(false);
     comm::out("OK TRY");
@@ -395,6 +398,7 @@ static void handle(char* line) {
   } else if (!strcmp(cmd, "SEND")) {
     if (!validC(i1) || codes[i1].khz == 0) return comm::out("ERR SEND empty");
     status::solid(true);
+    sound::stop();
     ir::send(codes[i1]);
     status::solid(false);
     comm::outf("OK SEND %d", i1);
@@ -445,6 +449,17 @@ static void handle(char* line) {
     if (mode == kLearning) return comm::out("ERR BUZZ busy learning");
     haptics::pulse(i1 > 0 ? i1 : 100);
     comm::out("OK BUZZ");
+  } else if (!strcmp(cmd, "SOUND")) {  // SOUND <cast|lightning|glow|error|learned|wake|lowbat|on|off>
+    if (!a1) return comm::outf("SOUND %s %s", sound::enabled() ? "on" : "off", sound::info());
+    if (!strcmp(a1, "on") || !strcmp(a1, "off")) {
+      sound::setEnabled(!strcmp(a1, "on"));
+      return comm::outf("OK SOUND %s", a1);
+    }
+    sound::Sound snd;
+    if (!sound::fromName(a1, snd)) return comm::out("ERR SOUND cast|lightning|glow|error|learned|wake|lowbat|on|off");
+    if (mode == kLearning) return comm::out("ERR SOUND busy learning");
+    sound::play(snd);
+    comm::outf("OK SOUND %s", a1);
   } else if (!strcmp(cmd, "BAT")) {
     comm::outf("BAT %u %s %d", power::batteryPercent(), FX(power::batteryVolts()).s, power::onCharger());
   } else if (!strcmp(cmd, "STATS")) {  // STATS = where the battery went, STATS 0 = start counting again
@@ -476,6 +491,7 @@ static void onSegment() {
     nearestOther(modeTarget, t, who, dist, othr);
     comm::outf("REC %d ok %u %s near %d %s %s", modeTarget, s.count, FX(s.threshold).s, who, FX(dist, 3).s, FX(othr, 3).s);
     haptics::play(haptics::kSaved);
+    sound::play(sound::kLearned);
     status::flash(status::kSaved);
     mode = kNormal;
     cooldownUntil = millis() + COOLDOWN_MS;
@@ -491,10 +507,12 @@ static void onSegment() {
   // so the two never pull current from the battery at the same time.
   if (fire) {
     status::solid(true);
+    sound::stop();
     ir::send(codes[c]);
     status::solid(false);
   }
   haptics::play(haptics::kCast);
+  sound::play(sound::kCast);
   status::flash(status::kCast);
   comm::outf("CAST %d %d %d", m.gid, c, fire);
   cooldownUntil = millis() + COOLDOWN_MS;
@@ -545,6 +563,7 @@ static void sampleOnce() {
       storage::saveSettings();
       comm::outf("CAL ok %s %s %s", FX(settings.axis[0], 3).s, FX(settings.axis[1], 3).s, FX(settings.axis[2], 3).s);
       haptics::play(haptics::kSaved);
+    sound::play(sound::kLearned);
       status::flash(status::kSaved);
       mode = kNormal;
     }
@@ -613,9 +632,10 @@ static void pollButton() {
       haptics::off();
       storage::factoryReset();
       haptics::play(haptics::kSaved);
+    sound::play(sound::kLearned);
       status::flash(status::kSaved);
       uint32_t t = millis();
-      while (haptics::busy() && millis() - t < 1000) haptics::update();
+      while ((haptics::busy() || sound::busy()) && millis() - t < 1000) { haptics::update(); sound::update(); }
       comm::out("BUTTON factory reset done: restarting now");
       flushOut();
       systemReset();
@@ -682,6 +702,7 @@ void setup() {
   haptics::begin();
   TRACE("ir");
   ir::begin();
+  sound::begin();  // after ir::begin(): it picks a timer the IR carrier isn't using
   TRACE("storage");
   storage::begin();
   haptics::setEnabled(settings.hapticsOn);
@@ -694,6 +715,7 @@ void setup() {
   if (!imu::begin()) {
     comm::out("ERR IMU not found");
     haptics::play(haptics::kError);
+    sound::play(sound::kError);
     status::flash(status::kError);
   }
   frame.setAxis({settings.axis[0], settings.axis[1], settings.axis[2]});
@@ -708,7 +730,10 @@ void setup() {
   // Watchdog: if the loop ever freezes for 2 s (e.g. stuck inside the Bluetooth
   // library), the chip restarts itself quietly; the BOOT line then says WATCHDOG.
   WatchdogTimer.begin(WDOG_PERIOD_2_S);
-  if (!power::quietBoot()) haptics::play(haptics::kWake);  // no buzz after a Bluetooth restart
+  if (!power::quietBoot()) {  // no buzz or sound after a Bluetooth restart
+    haptics::play(haptics::kWake);
+    sound::play(sound::kWake);
+  }
   lastMotionMs = millis();
   nextSampleUs = micros();
   comm::outf("BOOT %s %s wake=%d (%s)", name, FW_VERSION, power::wokeFromSleep(), power::wakeReason());
@@ -719,12 +744,15 @@ void setup() {
 void loop() {
   WatchdogTimer.feed();
   haptics::update();
+  sound::update();
   {
     static uint32_t lastBatCheck = 0;
     static bool lowBat = false;
     if (lastBatCheck == 0 || millis() - lastBatCheck > 30000) {
       lastBatCheck = millis() | 1;
+      bool wasLow = lowBat;
       lowBat = power::batteryPercent() < LOW_BATTERY_PCT;
+      if (lowBat && !wasLow) sound::play(sound::kLowBat);
     }
     status::set(mode == kLearning                         ? status::kLearning
                 : (mode == kRecording || mode == kCalibrating) ? status::kBusy
@@ -751,12 +779,14 @@ void loop() {
   if (mode == kRecording && now > modeDeadline) {
     comm::outf("REC %d timeout", modeTarget);
     haptics::play(haptics::kError);
+    sound::play(sound::kError);
     status::flash(status::kError);
     mode = kNormal;
   }
   if (mode == kCalibrating && now > modeDeadline) {
     comm::out("CAL fail (not still)");
     haptics::play(haptics::kError);
+    sound::play(sound::kError);
     status::flash(status::kError);
     mode = kNormal;
   }
@@ -796,11 +826,13 @@ void loop() {
       describeCode(modeTarget);
 #endif
       haptics::play(haptics::kSaved);
+    sound::play(sound::kLearned);
       status::flash(status::kSaved);
       mode = kNormal;
     } else if (s == ir::kTimeout || s == ir::kUnsupported) {
       comm::outf("LEARN %d %s", modeTarget, s == ir::kTimeout ? "timeout" : "unsupported");
       haptics::play(haptics::kError);
+    sound::play(sound::kError);
       status::flash(status::kError);
       mode = kNormal;
     }

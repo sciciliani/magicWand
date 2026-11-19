@@ -7,7 +7,7 @@
 //         Tools > Protocol stack > BLE (Arduino)     <-- required (ArduinoBLE API)
 #pragma once
 
-#define FW_VERSION "0.6.1-mg24"
+#define FW_VERSION "0.6.2-mg24"
 #define BLE_NAME_PREFIX "Wand"  // advertised as "Wand-XXXX"
 
 // ------------------------------------------------------------------ pins
@@ -20,7 +20,8 @@
 //   Vibration    D2 -> motor; other wire -> GND
 //   IR receiver  VS1838B OUT -> D3, VCC -> D7, GND -> GND
 //   Button       D9 -> microswitch -> GND
-//   Free         D0, D4, D5, D8, D10
+//   Buzzer       D0 -> buzzer driver (see PIN_BUZZER)
+//   Free         D4, D5, D8, D10
 //   D1           must stay FREE (see below)
 //
 // !! D1 (PC01): if it reads LOW at reset the MG24 bootloader waits for an
@@ -46,7 +47,13 @@
 #define PIN_BUTTON D9
 #define HAS_BUTTON 1
 #define BUTTON_FACTORY_MS 5000
-#define HAS_DOCK_SENSE 0   // the MG24 can't see USB/5V by itself; see README
+#define HAS_DOCK_SENSE 0
+
+// Passive buzzer (sounds: cast, lightning, glow, error, learned, wake, low battery).
+// D0 -> driver input (transistor/MOSFET for a magnetic buzzer; a piezo can go direct).
+// Must be a port-C pin, D0 or D2..D7, never D1, and not PIN_IR_LED.
+#define HAS_BUZZER 1
+#define PIN_BUZZER D0   // the MG24 can't see USB/5V by itself; see README
 
 // On-board (XIAO MG24 Sense)
 #define PIN_IMU_PWR PD5    // IMU is powered from this GPIO (Seeed wiki)
@@ -74,9 +81,9 @@
 #define STILL_ENERGY 25.0f
 
 // How the wand notices it was picked up:
-//   WAKE_POLL    (default, needs no extra wiring): sleep 1 s, wake for ~25 ms,
+//   WAKE_POLL    (default, needs no extra wiring): sleep 1 s (3 s after 10 min), each check ~0.25 s awake,
 //                check whether the wand's tilt changed, go back to sleep if not.
-//                Average ~40-120 uA -> weeks of standby on a small LiPo.
+//                Measured (0.6.1 STATS): ~1.5 mA average at 1 s, ~0.5 mA at 3 s.
 //   WAKE_IMU_INT (~2-5 uA): IMU wake-up interrupt on PIN_IMU_INT. Needs the
 //                IMU INT1 line on an EM4-wakeup-capable pin: check the
 //                XIAO MG24 Sense schematic first, then set PIN_IMU_INT.
@@ -84,6 +91,8 @@
 #define WAKE_IMU_INT 1
 #define WAKE_MODE WAKE_POLL
 #define WAKE_POLL_MS 1000
+#define WAKE_POLL_SLOW_MS 3000   // after WAKE_SLOW_AFTER_S asleep, check only this often
+#define WAKE_SLOW_AFTER_S 600     // 10 min
 // Hold motor / IR receiver power / mic / IMU power / battery divider OFF and the flash
 // chip deselected while asleep (0 = let them float, as before 0.6.1)
 #define SLEEP_HOLD_PINS 1
@@ -114,6 +123,10 @@
 #define IR_CAPTURE_EDGES 1000  // learning buffer; a held button's extra repeats are ignored
 #define IR_RAW_MAX 600         // longest raw list accepted by the CODE command
 #define IR_MAX_CODES 12
+// Each send acts like a remote button held ~this long (ms): NEC adds repeat
+// bursts, Samsung resends the frame, every 108 ms (220 = frame + 2 more).
+// 0 = send only the frames as captured (old behaviour).
+#define IR_HOLD_MS 330
 #define IR_LEARN_TIMEOUT_MS 10000
 #define IR_END_GAP_US 200000   // capture ends after this much silence (as IrDump)
 #define IR_MARK_EXCESS_US 50

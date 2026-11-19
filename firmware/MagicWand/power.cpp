@@ -13,6 +13,7 @@
 #include "comm.h"
 #include "config.h"
 #include "haptics.h"
+#include "sound.h"
 #include "imu.h"
 #include "ir.h"
 #include "status.h"
@@ -25,7 +26,7 @@ namespace power {
 enum : uint32_t { kMagicAddr = 8, kGxAddr = 9, kGyAddr = 10, kGzAddr = 11, kPollsAddr = 12, kSensAddr = 13, kQuietAddr = 14, kWhereAddr = 15,
                   kAxAddr = 16, kAyAddr = 17, kAzAddr = 18, kPendAddr = 19, kLowBatAddr = 20,
                   kStMagicAddr = 21, kStPollsAddr = 22, kStPollMsAddr = 23, kStWakesAddr = 24, kStAwakeAddr = 25,
-                  kStLowBatAddr = 26 };
+                  kStLowBatAddr = 26, kStSlowAddr = 27, kStBootMsAddr = 28 };
 static const uint32_t kStMagic = 0x53544154;  // "STAT": sleep statistics are valid
 static const uint32_t kLowBatMagic = 0x4C4F5742;  // "LOWB": battery was low when the wand went to sleep
 static const uint32_t kQuietMagic = 0x51554945;  // "QUIE"
@@ -44,7 +45,7 @@ static float u2f(uint32_t u) { float f; memcpy(&f, &u, 4); return f; }
 static void stAdd(uint32_t addr, uint32_t v) { LowPower.deepSleepMemoryWrite(addr, LowPower.deepSleepMemoryRead(addr) + v); }
 static void stInit() {
   if (LowPower.deepSleepMemoryRead(kStMagicAddr) == kStMagic) return;
-  for (uint32_t a = kStPollsAddr; a <= kStLowBatAddr; a++) LowPower.deepSleepMemoryWrite(a, 0);
+  for (uint32_t a = kStPollsAddr; a <= kStBootMsAddr; a++) LowPower.deepSleepMemoryWrite(a, 0);
   LowPower.deepSleepMemoryWrite(kStMagicAddr, kStMagic);
 }
 void statsReset() {
@@ -58,8 +59,11 @@ void stats(Stats& st) {
   st.wakes = LowPower.deepSleepMemoryRead(kStWakesAddr);
   st.awakeS = LowPower.deepSleepMemoryRead(kStAwakeAddr) + millis() / 1000;   // + this wake-up so far
   st.lowBat = LowPower.deepSleepMemoryRead(kStLowBatAddr);
+  st.slow = LowPower.deepSleepMemoryRead(kStSlowAddr);
+  st.bootMs = LowPower.deepSleepMemoryRead(kStBootMsAddr);
   // rough average current (assumed: ~6 mA during a check, ~12 mA awake, ~5 uA asleep)
-  double sleepS = st.polls * (WAKE_POLL_MS / 1000.0) + st.lowBat * (LOW_BAT_POLL_MS / 1000.0);
+  double sleepS = (st.polls - st.slow) * (WAKE_POLL_MS / 1000.0) + st.slow * (WAKE_POLL_SLOW_MS / 1000.0) +
+                  st.lowBat * (LOW_BAT_POLL_MS / 1000.0);
   double totS = sleepS + st.pollMs / 1000.0 + st.awakeS;
   st.hours = totS / 3600.0;
   st.estUa = totS > 0 ? (st.pollMs / 1000.0 * 6000 + st.awakeS * 12000.0 + sleepS * 5) / totS : 0;
@@ -88,6 +92,7 @@ static void em4SleepIrHeldLow(uint32_t ms) {
   // a floating gate/enable can leave a part half on all night.
   static const struct { GPIO_Port_TypeDef port; uint8_t pin; uint8_t level; } kHold[] = {
       {gpioPortC, 2, 0},  // D2  motor driver: off
+      {gpioPortC, 0, 0},  // D0  buzzer driver: off
       {gpioPortC, 7, 0},  // D7  IR receiver power: off
       {gpioPortC, 8, 0},  // PC8 microphone enable: off
       {gpioPortD, 5, 0},  // PD5 IMU power: off
@@ -126,7 +131,15 @@ static void em4SleepIrHeldLow(uint32_t ms) {
   }
 }
 
-[[noreturn]] static void sleepAgain() { sleepFor(WAKE_POLL_MS); }
+// Check for movement every WAKE_POLL_MS for the first WAKE_SLOW_AFTER_S seconds of
+// sleep, then every WAKE_POLL_SLOW_MS: each check is a full chip start (~0.25 s awake),
+// so a wand left alone overnight checks less often.
+[[noreturn]] static void sleepAgain() {
+  uint32_t polls = LowPower.deepSleepMemoryRead(kPollsAddr);
+  bool slow = polls >= (uint32_t)WAKE_SLOW_AFTER_S * 1000u / WAKE_POLL_MS;
+  if (slow) stAdd(kStSlowAddr, 1);
+  sleepFor(slow ? WAKE_POLL_SLOW_MS : WAKE_POLL_MS);
+}
 
 // Battery voltage from inside the poller (before begin() has run).
 static float pollBatteryVolts() {
@@ -152,7 +165,10 @@ static float axisPitchDeg(const wand::Vec3& g, const wand::Vec3& a) {
   return acosf(fminf(1.0f, fmaxf(-1.0f, c))) * 57.2958f;
 }
 
+static uint32_t bootMs = 0;   // ms from chip start to our first line (the core's own start-up)
+
 void earlyBoot() {
+  bootMs = millis();
   quiet = LowPower.deepSleepMemoryRead(kQuietAddr) == kQuietMagic;
   // (Checked only when this isn't a wake-up from sleep, so a stale watchdog
   // flag can never stop the sleep checks from going back to sleep.)
@@ -220,7 +236,7 @@ void earlyBoot() {
     LowPower.deepSleepMemoryWrite(kPollsAddr, LowPower.deepSleepMemoryRead(kPollsAddr) + 1);
     LowPower.deepSleepMemoryWrite(kPendAddr, 0);
     imu::powerOff();
-    stInit(); stAdd(kStPollsAddr, 1); stAdd(kStPollMsAddr, millis());
+    stInit(); stAdd(kStPollsAddr, 1); stAdd(kStPollMsAddr, millis()); stAdd(kStBootMsAddr, bootMs);
     sleepAgain();  // still lying there: back to sleep, BLE never started
   }
   // Moved. Confirm with a second check WAKE_CONFIRM_MS later: a bump on the
@@ -293,6 +309,7 @@ static void onWake() {}
 void deepSleep() {
   WatchdogTimer.end();  // don't let it fire while the wand sleeps
   haptics::off();
+  sound::stop();
   status::off();
   ir::stopLearn();
   ir::forceOff();  // strong LOW (WAKE_IMU_INT: the core's deepSleep() holds pins as they are)
