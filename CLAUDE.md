@@ -35,6 +35,10 @@ firmware/MagicWand/
   storage.*      NVM3 key/value (one object per item, chunked at 700 B) or EEPROM fallback (STORAGE_NVM3 0)
   comm.*         NUS on the native Silicon Labs BLE stack (Protocol stack: BLE (Silabs)) + USB Serial, same text protocol; notifications sized to the MTU
   haptics.*      non-blocking vibration patterns
+  sound.*        passive buzzer on D0 (0.6.3): tables in sounds_data.h, tone from a free TIMER (not the IR one);
+                 volume/pitch/cast sound/event switches saved under their own NVM3 key (kKeySound)
+  light.*        WS2812B ring (0.7.0): power from D10 (a pin), data bit-banged on D8 (swappable in config.h) with the DWT counter;
+                 show() enforces LIGHT_MAX_LIT (3) lit, LIGHT_MAX_LEVEL and LIGHT_BUDGET whatever an effect asks
   config.h       all pins and knobs
 ```
 
@@ -44,7 +48,7 @@ Key decisions (agreed with Santiago, don't undo without asking):
 - **On-device training = storing templates** (DTW). Users add moves from the app, no reflashing.
 - **Config over BLE from Chrome** (Web Bluetooth). iOS unsupported; accepted.
 - **IR stored raw.** Presets are encoded in the app.
-- **D1 (PC01) stays empty**: an IR LED on D1 kept the wand from booting (solid yellow, no BLE). IR LED is on D0.
+- **D1 (PC01) stays empty**: an IR LED on D1 kept the wand from booting (solid yellow, no BLE). IR LED driver is on D6, buzzer on D0, light ring on D10 (power) + D8 (data).
 
 ## To verify on the real MG24 (rough order)
 
@@ -74,6 +78,14 @@ Key decisions (agreed with Santiago, don't undo without asking):
    pin retention: IR pins held LOW, all other pins set to disabled first (= what EM4 gave them before).
    `setup()` starts with `ir::forceOff()`. Check: D6 reads 0 V while asleep, and sleep current didn't rise.
 
+11. **Buzzer timer (0.6.4)**: not every TIMER can be routed to every port; 0.6.3 used TIMER4 on D0 (PC0) and was
+   silent. `sound::begin()` now probes TIMER3, 1, 2, 4 (skipping the IR one) by reading the pin back. BOOT prints
+   `Sound: TIMERn on D0, …` or `Sound: SILENT: no timer reaches D0 (tried …)`.
+
+12. **Light ring (0.7.0)**: BOOT prints `Light: 8 LEDs, max 3 lit, power D10, data D8`. `LIGHT walk` must light
+   LEDs 0..7 in turn. Wrong colours = the WS2812B timing (light.cpp: 0.35/0.8/1.3 µs from SystemCoreClock) or the
+   pin can't power the ring (flicker): then move the ring's 5V to BAT+ through a spare IR driver board on the power pin.
+
 ## Next steps / ideas (not started)
 
 - Gesture template export/import (`DUMPG` / upload).
@@ -89,7 +101,7 @@ make test       # host tests: must stay green (also checks the sketch copies are
 make check-fw   # host syntax check vs test/stubs_* (update stubs if you use new core APIs)
 make setup      # arduino-cli: Silicon Labs core + LSM6DS3 lib
 make compile / make upload / make monitor
-make app        # http://localhost:8000  (?demo = no hardware)
+make app        # http://localhost:8000  (?demo = no hardware, ?god_mode = hidden developer tab: sound + light lab)
 ```
 
 Conventions: `gesture.*` has no Arduino headers. A protocol change goes in three places:

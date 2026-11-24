@@ -3,7 +3,8 @@
 //
 // Tabs: Home (live motion, last spell), Spells, Devices, Knight, Wizard (the
 // first-time setup), Settings (backups), IR codes (raw slots), Log.
-import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=16';
+import { BleWand, MockWand, bluetoothAvailable, knownWands } from './wand-link.js?v=18';
+import { initGodMode } from './god-mode.js?v=2';
 import { LIBRARY, learnedKey } from './ir-presets.js?v=14';
 import { initTraining } from './training.js?v=8';
 import { initSpells } from './spells.js?v=5';
@@ -207,6 +208,8 @@ const ota = initOta({
   },
 });
 
+const god = initGodMode({ ...shared, showTab: (tab) => showTab(tab) });
+
 function goto(tab, what) {
   showTab(tab);
   if (tab === 'devices' && what === 'add') devices.openWizard();
@@ -347,6 +350,7 @@ function onClosed() {
   const name = state.info?.name || state.link?.name || t('the wand');
   const wasOn = !!state.link;
   state.link = null;
+  god.onDisconnect();
   state.info = null;
   state.recording = state.learning = -1;
   training.onDisconnect();
@@ -427,6 +431,7 @@ function onLine(line) {
   training.onLine(tag, p);
   spells.onLine(tag, p);
   ota.onLine(tag, p);
+  god.onLine(tag, p);
 }
 const knightPairing = () => !!document.querySelector('#knightArea .steps, #knightArea [data-act=pair-done]') || false;
 
@@ -437,6 +442,7 @@ function onInfo() {
   render();
   knight.onInfo();
   ota.onInfo();
+  god.onInfo();
   if (state.checked) return;
   state.checked = true;
   const p = state.profile;
@@ -732,6 +738,7 @@ function showTab(name) {
   document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-selected', x.dataset.tab === name));
   document.querySelectorAll('.tab').forEach((x) => (x.hidden = x.id !== 'tab-' + name));
   training.onShown(name === 'training' && document.visibilityState === 'visible');
+  god.onShown(name === 'god');
   updateStream();
 }
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));

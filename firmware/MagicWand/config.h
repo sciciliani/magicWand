@@ -7,7 +7,7 @@
 //         Tools > Protocol stack > BLE (Arduino)     <-- required (ArduinoBLE API)
 #pragma once
 
-#define FW_VERSION "0.6.2-mg24"
+#define FW_VERSION "0.7.1-mg24"
 #define BLE_NAME_PREFIX "Wand"  // advertised as "Wand-XXXX"
 
 // ------------------------------------------------------------------ pins
@@ -21,7 +21,8 @@
 //   IR receiver  VS1838B OUT -> D3, VCC -> D7, GND -> GND
 //   Button       D9 -> microswitch -> GND
 //   Buzzer       D0 -> buzzer driver (see PIN_BUZZER)
-//   Free         D4, D5, D8, D10
+//   Light ring   D10 -> ring 5V (the pin powers it), D8 -> ring DIN, GND (see HAS_LIGHT)
+//   Free         D4, D5
 //   D1           must stay FREE (see below)
 //
 // !! D1 (PC01): if it reads LOW at reset the MG24 bootloader waits for an
@@ -54,6 +55,18 @@
 // Must be a port-C pin, D0 or D2..D7, never D1, and not PIN_IR_LED.
 #define HAS_BUZZER 1
 #define PIN_BUZZER D0   // the MG24 can't see USB/5V by itself; see README
+
+// WS2812B ring (8 LEDs) for short blinks. Powered FROM A PIN, so the limits
+// below keep the current small: the 8 LEDs alone draw ~5-8 mA just being
+// powered; lit LEDs add LIGHT_BUDGET/255 x ~12 mA at most.
+#define HAS_LIGHT 1
+// Either way round works: swap these two to match the wires (data: D4, D5, D8 or D10).
+#define PIN_LIGHT_PWR D10   // PA5 -> ring 5V/VCC: on only during a blink
+#define PIN_LIGHT_DATA D8   // PA3 -> ring DIN (330 R in series if you have one)
+#define LIGHT_LEDS 8
+#define LIGHT_MAX_LIT 3     // never more than this many lit at once (1-3)
+#define LIGHT_MAX_LEVEL 40  // brightest any colour channel gets (of 255), at 100 % brightness
+#define LIGHT_BUDGET 90     // sum of all channels of a frame (of 255 each) after the cap
 
 // On-board (XIAO MG24 Sense)
 #define PIN_IMU_PWR PD5    // IMU is powered from this GPIO (Seeed wiki)

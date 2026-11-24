@@ -415,3 +415,26 @@ dialog.action-dlg { width: 460px; }
 
 /* Settings > Firmware */
 .fw-bar { width: 100%; height: 10px; accent-color: var(--gold, #d4af37); }
+
+/* God mode (developer page) */
+.god .god-pads { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.god .god-pads button { padding: 14px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.god .god-pads button b { font-size: 22px; line-height: 1; }
+.god .god-pads button.playing { border-color: var(--gold); box-shadow: 0 0 12px #e3bd6255; }
+.god .god-events { border: 0; padding: 0; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.god .god-events legend { margin-bottom: 4px; }
+.god label.inline { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
+.god .god-events label { margin: 0; }
+.god label.inline input { width: 84px; }
+.god .god-sub { margin-top: 14px; }
+.god .god-finder { font: 700 40px/1.2 var(--display); color: var(--gold); text-align: center; padding: 10px 0; }
+.god pre { white-space: pre-wrap; word-break: break-all; }
+.god .god-light { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.god .god-light-ctl { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; }
+.god .god-ring { position: relative; width: 150px; height: 150px; flex: none; border-radius: 50%; border: 1px dashed var(--line); }
+.god .god-ring button { position: absolute; width: 30px; height: 30px; padding: 0; border-radius: 50%; transform: translate(-50%, -50%);
+  background: #0d0b14; border: 1px solid var(--line); font: 600 10px/1 var(--mono, monospace); color: var(--muted); }
+.god .god-ring button.lit { color: transparent; }
+.god .god-pads-light { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.god .god-pads-light button { padding: 10px 6px; }
+.god input[type=color] { width: 44px; height: 30px; padding: 0 2px; border-radius: 6px; }

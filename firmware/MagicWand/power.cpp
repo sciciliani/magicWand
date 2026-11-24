@@ -14,6 +14,7 @@
 #include "config.h"
 #include "haptics.h"
 #include "sound.h"
+#include "light.h"
 #include "imu.h"
 #include "ir.h"
 #include "status.h"
@@ -93,6 +94,8 @@ static void em4SleepIrHeldLow(uint32_t ms) {
   static const struct { GPIO_Port_TypeDef port; uint8_t pin; uint8_t level; } kHold[] = {
       {gpioPortC, 2, 0},  // D2  motor driver: off
       {gpioPortC, 0, 0},  // D0  buzzer driver: off
+      {gpioPortA, 3, 0},  // D8  light ring power: off
+      {gpioPortA, 5, 0},  // D10 light ring data: low (else it feeds the ring)
       {gpioPortC, 7, 0},  // D7  IR receiver power: off
       {gpioPortC, 8, 0},  // PC8 microphone enable: off
       {gpioPortD, 5, 0},  // PD5 IMU power: off
@@ -310,6 +313,7 @@ void deepSleep() {
   WatchdogTimer.end();  // don't let it fire while the wand sleeps
   haptics::off();
   sound::stop();
+  light::off();
   status::off();
   ir::stopLearn();
   ir::forceOff();  // strong LOW (WAKE_IMU_INT: the core's deepSleep() holds pins as they are)

@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "sound.h"
+#include "light.h"
+
 #if STORAGE_NVM3
 #include "nvm3_default.h"  // Silicon Labs NVM3 (part of the core's SDK)
 #else
@@ -19,6 +22,21 @@ namespace storage {
 static const uint32_t kMagic = 0x57414E44;  // "WAND"
 static const uint16_t kVersion = 3;  // 3: IR codes stored decoded (hex + timings)
 static uint32_t err = 0;
+
+// Sound settings live under their own key (NVM3) / at the end of the blob
+// (EEPROM), so adding them didn't change Settings and wipe what was saved.
+struct SoundBlob {
+  uint32_t magic;
+  sound::Prefs p;
+};
+static const uint32_t kSoundMagic = 0x534E4431;  // "SND1"
+static bool soundValid(const SoundBlob& b) { return b.magic == kSoundMagic && b.p.volume <= 100; }
+struct LightBlob {
+  uint32_t magic;
+  light::Prefs p;
+};
+static const uint32_t kLightMagic = 0x4C475431;  // "LGT1"
+static bool lightValid(const LightBlob& b) { return b.magic == kLightMagic && b.p.bright <= 100; }
 
 static void defaults() {
   memset(&settings, 0, sizeof(settings));
@@ -148,6 +166,8 @@ void exportDefaults(void (*emit)(const char*)) {
 static const uint32_t kKeySettings = 0x0A000;
 static const uint32_t kKeyGesture = 0x0A100;  // + i*8 + chunk
 static const uint32_t kKeyCode = 0x0A200;     // + i*8 + chunk
+static const uint32_t kKeySound = 0x0A300;
+static const uint32_t kKeyLight = 0x0A310;
 static const size_t kChunk = 700;             // below any NVM3 max object size
 static const int kMaxChunks = 4;
 
@@ -209,10 +229,24 @@ void begin() {
     size_t n = readBlob(kKeyCode + i * 8, &codes[i], sizeof(IrCode));
     if (n != sizeof(IrCode) || !codeValid(codes[i])) memset(&codes[i], 0, sizeof(IrCode));
   }
+  SoundBlob sb;
+  if (readBlob(kKeySound, &sb, sizeof(sb)) == sizeof(sb) && soundValid(sb)) sound::setPrefs(sb.p);
+  else sound::setPrefs(sound::defaults());
+  LightBlob lb;
+  if (readBlob(kKeyLight, &lb, sizeof(lb)) == sizeof(lb) && lightValid(lb)) light::setPrefs(lb.p);
+  else light::setPrefs(light::defaults());
   if (fresh) factoryReset();  // first boot: install default_spells.h
 }
 
 bool saveSettings() { return writeBlob(kKeySettings, &settings, sizeof(settings)); }
+bool saveSound() {
+  SoundBlob sb = {kSoundMagic, sound::prefs()};
+  return writeBlob(kKeySound, &sb, sizeof(sb));
+}
+bool saveLight() {
+  LightBlob lb = {kLightMagic, light::prefs()};
+  return writeBlob(kKeyLight, &lb, sizeof(lb));
+}
 bool saveGesture(int i) {
   return writeBlob(kKeyGesture + i * 8, &gestures[i], gestures[i].count ? gestureBytes(gestures[i]) : 0);
 }
@@ -223,7 +257,11 @@ void factoryReset() {
   memset(gestures, 0, sizeof(gestures));
   memset(codes, 0, sizeof(codes));
   loadFactoryContent();
+  sound::setPrefs(sound::defaults());
+  light::setPrefs(light::defaults());
   saveSettings();
+  saveSound();
+  saveLight();
   for (int i = 0; i < wand::kMaxGestures; i++) saveGesture(i);
   for (int i = 0; i < IR_MAX_CODES; i++) saveCode(i);
 }
@@ -247,7 +285,7 @@ size_t usedBytes() {
   size_t n = 6 + 2 + sizeof(settings);
   for (int i = 0; i < wand::kMaxGestures; i++) n += 2 + (gestures[i].count ? gestureBytes(gestures[i]) : 0);
   for (int i = 0; i < IR_MAX_CODES; i++) n += 2 + (codes[i].khz ? codeBytes(codes[i]) : 0);
-  return n;
+  return n + 2 + sizeof(SoundBlob) + 2 + sizeof(LightBlob);
 }
 
 static bool saveAll() {
@@ -264,6 +302,10 @@ static bool saveAll() {
   bool ok = put(&settings, sizeof(settings));
   for (int i = 0; ok && i < wand::kMaxGestures; i++) ok = put(&gestures[i], gestures[i].count ? gestureBytes(gestures[i]) : 0);
   for (int i = 0; ok && i < IR_MAX_CODES; i++) ok = put(&codes[i], codes[i].khz ? codeBytes(codes[i]) : 0);
+  SoundBlob sb = {kSoundMagic, sound::prefs()};
+  if (ok) ok = put(&sb, sizeof(sb));
+  LightBlob lb = {kLightMagic, light::prefs()};
+  if (ok) ok = put(&lb, sizeof(lb));
   if (!ok) {
     err = 1;  // storage full
     return false;
@@ -312,6 +354,14 @@ void begin() {
     size_t len = get(&codes[i], sizeof(IrCode));
     if (oldCodes || len != sizeof(IrCode) || !codeValid(codes[i])) memset(&codes[i], 0, sizeof(IrCode));
   }
+  SoundBlob sb;
+  memset(&sb, 0, sizeof(sb));
+  if (n + 2 <= total && get(&sb, sizeof(sb)) == sizeof(sb) && soundValid(sb)) sound::setPrefs(sb.p);
+  else sound::setPrefs(sound::defaults());
+  LightBlob lb;
+  memset(&lb, 0, sizeof(lb));
+  if (n + 2 <= total && get(&lb, sizeof(lb)) == sizeof(lb) && lightValid(lb)) light::setPrefs(lb.p);
+  else light::setPrefs(light::defaults());
   if (oldCodes) {  // keep spells and settings, drop old-format codes and their bindings
     memset(settings.bind, kNoBinding, sizeof(settings.bind));
     saveAll();
@@ -321,12 +371,16 @@ void begin() {
 bool saveSettings() { return saveAll(); }
 bool saveGesture(int) { return saveAll(); }
 bool saveCode(int) { return saveAll(); }
+bool saveSound() { return saveAll(); }
+bool saveLight() { return saveAll(); }
 
 void factoryReset() {
   defaults();
   memset(gestures, 0, sizeof(gestures));
   memset(codes, 0, sizeof(codes));
   loadFactoryContent();
+  sound::setPrefs(sound::defaults());
+  light::setPrefs(light::defaults());
   saveAll();
 }
 #endif

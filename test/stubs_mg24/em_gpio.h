@@ -7,6 +7,8 @@ typedef enum { gpioModeDisabled, gpioModeInput, gpioModeInputPull, gpioModePushP
 #define GPIO_PORT_PIN_VALID(port, pin) ((pin) < 16)
 void GPIO_PortOutSet(GPIO_Port_TypeDef port, uint32_t pins);
 void GPIO_PortOutClear(GPIO_Port_TypeDef port, uint32_t pins);
+void GPIO_PinOutClear(GPIO_Port_TypeDef port, unsigned int pin);
+void GPIO_PinOutSet(GPIO_Port_TypeDef port, unsigned int pin);
 void GPIO_PinModeSet(GPIO_Port_TypeDef port, unsigned int pin, GPIO_Mode_TypeDef mode, unsigned int out);
 unsigned int GPIO_PinInGet(GPIO_Port_TypeDef port, unsigned int pin);
 // Peripheral routing (DBUS) registers, as in efr32mg24_gpio.h.

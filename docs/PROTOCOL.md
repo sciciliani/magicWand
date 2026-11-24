@@ -44,6 +44,23 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 | `SET haptics 0\|1` | Vibration feedback | `OK SET …` |
 | `SET name <name\|->` | Rename the wand (max 11 chars, `-` = factory name). The wand restarts and comes back as `Wand-<name>` | `OK SET name Wand-<name> (restarting)`, then the link drops |
 | `BUZZ <ms>` | Test the motor | `OK BUZZ` |
+| `SOUND` | Buzzer state (0.6.3) | `SOUND {"hw":1,"on":1,"vol":100,"pitch":0,"cast":"cast","events":121,"info":"TIMER4 on D0, …"}` |
+| `SOUND <cast\|lightning\|glow\|error\|learned\|wake\|lowbat>` | Play a sound now, even when muted (sound lab) | `OK SOUND name` |
+| `SOUND on\|off` | Mute / unmute the wand's own event sounds. Saved | `OK SOUND on` |
+| `SOUND vol <0–100>` | Volume. Scales the wave's loudness, not the length; 0 = silent. Saved | `OK SOUND vol n` |
+| `SOUND pitch <−12…12>` | Moves every sound up or down by semitones (to sit on the buzzer's loud range). Saved | `OK SOUND pitch n` |
+| `SOUND castsound <cast\|lightning\|glow\|random>` | What a spell cast plays. Saved | `OK SOUND castsound x` |
+| `SOUND events <mask>` | Which events make a sound: bit 0 cast, 3 error, 4 learned, 5 wake, 6 low battery (121 = all). Saved | `OK SOUND events n` |
+| `SOUND tone <hz> [ms] [duty 1–50]` | One tone, 100–12000 Hz, up to 5 s (default 500 ms, duty 50 = loudest). Volume and pitch apply | `OK SOUND tone hz` |
+| `SOUND sweep <fromHz> <toHz> [ms]` | Glide from one pitch to another (default 2 s): find where the buzzer is loudest | `OK SOUND sweep from` |
+| `SOUND stop` | Silence | `OK SOUND stop` |
+| `LIGHT` | Light ring state (0.7.0) | `LIGHT {"hw":1,"on":1,"bright":60,"events":121,"leds":8,"maxlit":3,"info":"8 LEDs, max 3 lit, power D10, data D8"}` |
+| `LIGHT <cast\|lightning\|glow\|error\|learned\|wake\|lowbat\|walk>` | Show a blink now, even when off. `walk` lights each LED in turn (wiring check) | `OK LIGHT name` |
+| `LIGHT on\|off` | Event blinks on/off. Saved | `OK LIGHT on` |
+| `LIGHT bright <0–100>` | Brightness, as a share of the firmware's cap (`LIGHT_MAX_LEVEL`). Saved | `OK LIGHT bright n` |
+| `LIGHT events <mask>` | Which events blink: same bits as `SOUND events` (121 = all). A cast shows the same choice as its sound. Saved | `OK LIGHT events n` |
+| `LIGHT px <0–7> <rrggbb> [ms]` | Light one LED in one colour (default 1500 ms, max 5000) | `OK LIGHT px i` |
+| `LIGHT stop` | Off now | `OK LIGHT stop` |
 | `BAT` | Battery | `BAT <pct> <volts> <charging>` |
 | `SLEEP` | Deep sleep now | `SLEEP requested` |
 | `RESET yes` | Factory reset (erase flash) | `OK RESET` |
@@ -67,7 +84,7 @@ Only `A–Z a–z 0–9 - _` survive; anything else becomes `_`. Max 15 characte
 
 ```json
 {"name":"Wand-A1B2","fw":"0.5.0-mg24","bat":76,"volts":3.92,"chg":0,"axis":[1,0,0],"thr":0.45,"sleep":30,"wake":3,
- "haptics":1,"motor":1,"irrx":1,"store":"nvm3","uid":"9A3F00112233A1B2",
+ "haptics":1,"motor":1,"irrx":1,"buzzer":1,"light":1,"store":"nvm3","uid":"9A3F00112233A1B2",
  "g":[{"n":"Aperio","c":3,"t":0.52,"b":0}, … 8 entries],
  "c":[{"n":"Samsung_Power","k":38,"l":67}, … 12 entries]}
 ```

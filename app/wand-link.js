@@ -140,8 +140,10 @@ export class MockWand {
     this.g = Array.from({ length: 8 }, () => ({ n: '', c: 0, t: 0.45, b: -1 }));
     this.c = Array.from({ length: 12 }, () => ({ n: '', k: 0, l: 0, d: [] }));
     this.s = { thr: 0.45, sleep: 30, wake: 3, haptics: 1, axis: [1, 0, 0], name: MOCK_FACTORY };
+    this.snd = { on: 1, vol: 100, pitch: 0, cast: 'cast', events: 121 };
+    this.lgt = { on: 1, bright: 60, events: 121 };
   }
-  _save() { try { sessionStorage.setItem('mockWand', JSON.stringify({ g: this.g, c: this.c, s: this.s })); } catch { /* private */ } }
+  _save() { try { sessionStorage.setItem('mockWand', JSON.stringify({ g: this.g, c: this.c, s: this.s, snd: this.snd, lgt: this.lgt })); } catch { /* private */ } }
 
   // Demo only: act out a move on the motion stream (Training tab test buttons).
   // speed 1 = normal, 1/3 = much too slow, 3 = rushed.
@@ -242,7 +244,7 @@ export class MockWand {
   _info() {
     return 'INFO ' + JSON.stringify({
       name: this.s.name, fw: this.s.fw || '0.5.0-demo', ota: 1, bat: 76, volts: 3.92, chg: 0, axis: this.s.axis, thr: this.s.thr,
-      sleep: this.s.sleep, wake: this.s.wake, haptics: this.s.haptics, motor: 1, irrx: 1, uid: MOCK_UID,
+      sleep: this.s.sleep, wake: this.s.wake, haptics: this.s.haptics, motor: 1, irrx: 1, buzzer: 1, light: 1, uid: MOCK_UID,
       g: this.g, c: this.c.map(({ n, k, l }) => ({ n, k, l })),
     });
   }
@@ -317,11 +319,39 @@ export class MockWand {
         this.s[a1] = +a2; this._save(); this._emit(`OK SET ${a1} ${a2}`); break;
       case 'CAL': this._emit('CAL hold the wand still, tip pointing straight up'); setTimeout(() => this._line('CAL ok 0.012 0.998 -0.051'), 1500); break;
       case 'BUZZ': this._emit('OK BUZZ'); break;
+      case 'LIGHT': {
+        const lg = this.lgt || (this.lgt = { on: 1, bright: 60, events: 121 });
+        const fx = ['cast', 'lightning', 'glow', 'error', 'learned', 'wake', 'lowbat', 'walk'];
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, parseInt(v, 10) || 0));
+        if (!a1) { this._emit(`LIGHT ${JSON.stringify({ hw: 1, ...lg, leds: 8, maxlit: 3, info: 'demo (no ring)' })}`); break; }
+        if (a1 === 'on' || a1 === 'off') lg.on = a1 === 'on' ? 1 : 0;
+        else if (a1 === 'bright' && a2) lg.bright = clamp(a2, 0, 100);
+        else if (a1 === 'events' && a2) lg.events = clamp(a2, 0, 255) & 121;
+        else if (!(a1 === 'stop' || (a1 === 'px' && a2 && rest[0]) || fx.includes(a1))) { this._emit('ERR LIGHT <effect>|walk|on|off|bright|events|px|stop'); break; }
+        this._save();
+        this._emit(`OK LIGHT ${a1}${a2 ? ' ' + a2 : ''}`);
+        break;
+      }
+      case 'SOUND': {
+        const snd = this.snd || (this.snd = { on: 1, vol: 100, pitch: 0, cast: 'cast', events: 121 });
+        const names = ['cast', 'lightning', 'glow', 'error', 'learned', 'wake', 'lowbat'];
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, parseInt(v, 10) || 0));
+        if (!a1) { this._emit(`SOUND ${JSON.stringify({ hw: 1, ...snd, info: 'demo (no buzzer)' })}`); break; }
+        if (a1 === 'on' || a1 === 'off') snd.on = a1 === 'on' ? 1 : 0;
+        else if (a1 === 'vol' && a2) snd.vol = clamp(a2, 0, 100);
+        else if (a1 === 'pitch' && a2) snd.pitch = clamp(a2, -12, 12);
+        else if (a1 === 'castsound' && ['cast', 'lightning', 'glow', 'random'].includes(a2)) snd.cast = a2;
+        else if (a1 === 'events' && a2) snd.events = clamp(a2, 0, 255) & 121;
+        else if (!(['stop', 'tone', 'sweep'].includes(a1) || names.includes(a1))) { this._emit('ERR SOUND <name>|on|off|vol|pitch|castsound|events|tone|sweep|stop'); break; }
+        this._save();
+        this._emit(`OK SOUND ${a1}${a2 ? ' ' + a2 : ''}`);
+        break;
+      }
       case 'PRACTICE': this.practice = a1 === '1'; this._emit(`OK PRACTICE ${this.practice ? 1 : 0}`); break;
       case 'BAT': this._emit('BAT 76 3.92 0'); break;
       case 'SLEEP': this._emit('SLEEP requested'); setTimeout(() => this.disconnect(), 300); break;
       case 'RESET':
-        if (a1 === 'yes') { this._fresh(); this._save(); this.name = this.s.name; }
+        if (a1 === 'yes') { this._fresh(); this._save(); this.name = this.s.name; }  // (_fresh also resets sound)
         this._emit(a1 === 'yes' ? 'OK RESET' : 'ERR type RESET yes'); break;
       case 'OTA':
         if (!a1) { this._emit('OTA INFO ok - slot=0x8100000 len=524288 app=0x8052000 nvm=0x8174000 btl=0x2010000 cap=0x20 chunk=240'); break; }

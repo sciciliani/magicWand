@@ -33,6 +33,8 @@ void begin();
 bool saveSettings();
 bool saveGesture(int i);
 bool saveCode(int i);
+bool saveSound();  // sound::prefs()
+bool saveLight();  // light::prefs()
 void factoryReset();
 // Print everything as a ready-to-paste default_spells.h (one line per call).
 void exportDefaults(void (*emit)(const char*));

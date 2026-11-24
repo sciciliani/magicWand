@@ -76,10 +76,13 @@ Everything connects straight to the XIAO: no transistors, no MOSFETs.
 | **D3** | IR receiver OUT | Reads a remote when learning |
 | **D7** | IR receiver VCC | Powered only while learning a code: clean supply (the motor is never on at the same time) and nothing drawn while the wand sleeps |
 | **D9** | Microswitch **NO** leg (its **C** leg to GND; NC unused) | Restart / wake / factory reset |
-| **GND** | IR LED short leg, motor black wire, receiver GND, button | Common ground |
+| **D0** | Buzzer **+** (through 100–150 Ω for a magnetic buzzer; − leg to GND) | Sounds (`PIN_BUZZER`) |
+| **D10** | Light ring **5V/VCC** | The pin powers the 8-LED ring only during a blink, so it's fully off otherwise (`PIN_LIGHT_PWR`) |
+| **D8** | Light ring **DIN** (330 Ω in series if you have one) | Colour data (`PIN_LIGHT_DATA`). At most 3 LEDs lit, kept dim. The two pins can be swapped in config.h |
+| **GND** | IR driver GND, motor black wire, receiver GND, button, buzzer −, light ring GND | Common ground |
 | **BAT+ / BAT−** | LiPo | Battery. Charges through the XIAO's USB-C port |
 | **D1** | **Nothing** | See below |
-| **D0, D4, D5, D8, D10** | Free (D0, D4, D5 can join D6 to drive the IR LED harder) | |
+| **D4, D5** | Free | |
 
 **About D1:** the MG24 checks D1 at reset, and if it reads LOW it waits for an upload instead of
 running: solid yellow LED, no Bluetooth. Anything wired to D1 (an LED included) can pull it LOW.
